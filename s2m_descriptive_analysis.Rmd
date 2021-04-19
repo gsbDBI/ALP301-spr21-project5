@@ -1,0 +1,1577 @@
+
+---
+title: 'Stones2Milestones Path Analysis Project: Understanding the Users and their
+  Interactions with the App '
+author: "YOUR NAME"
+date: "April 2021"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    number_sections: no
+    theme: journal
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+# Tutorial Overview
+
+The goal of this set of tutorials is to get you started on the Stones 2 Milestones (S2M) path analysis project. We will break this process down into two primary stages. First, you must understand the basic facts of the data. What do S2M customers look like? How do they use the Freadom Application? This first tutorial focuses on exploring these basic facts. Second, you must consider what levers you have at your disposal to affect customer behavior. In other words, you must identify what decisions S2M can make, so the data can inform you about what decisions they *should* make. The second tutorial walks you through this process.
+
+General information about the app and S2M can be found in the Project Packet distributed to your team. The datasets we use are in the same project as these tutorials in your RStudio Cloud workspace. These datasets are: `story_tracking.csv`, `child.csv`, and `child_mapping.csv`. A data dictionary to give you information on the variables in the datasets is also found in the `Data-Dictionary.md` R markdown file, which is also in the same project as these tutorials in your RStudio Cloud workspace.
+
+This first tutorial is organized as follows. We begin with preliminaries in Section *Preliminaries* on loading, merging, and cleaning the datasets. Then, we look at some basic facts for all users in Section *Basic Facts on All Users*. Next, we consider basic facts about users when they first join the app in Section *Basic Facts on New Users*. Lastly, in Section *Short-Term v. Long-Term Users*, we compare basic facts about short-term versus long-term users
+
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+ # results = 'hide'
+)
+```
+
+# Preliminaries
+
+In this section, we load and merge the three datasets - user-story interaction data, user-level data, and user id mapping data - needed for the analyses in these tutorials, then perform some cleaning of the data. While the datasets you work with have largely already been cleaned, meaning that corrupt or inaccurate data has been detected and corrected, we do some additional cleaning particularly relevant to our data analyses. The end goal of this section is to have a single dataset ready for analysis.
+
+We choose to merge the data into a single dataset for the purposes of this analysis; however, this approach may not be optimal for all analyses. Merging all datasets together first to analyze one large rectangular dataset can make the dataset needlessly big. Generally, you should break down an analysis by which datasets are needed and load just the need dataset(s).
+
+## Load the Necessary Packages
+
+Before interacting with the datasets, the first step is to load the necessary packages into R. Packages that are deemed "necessary" vary with the analyses you perform. The packages in the code below are specifically relevant to the analyses in these tutorials.
+
+```{r load_tidyverse}
+# Ensure that pacman is installed for package management and loading.
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse) # for data reading wrangling and visualization
+
+```
+
+```{r load_packages}
+# for enabling dataframe manipulation (0.8.0.1)
+pacman::p_load(dplyr) 
+# for simple interface for OLS estimation w/ robust std errors ()
+pacman::p_load(estimatr)
+# for summary statistics  (3042.89)
+pacman::p_load(fBasics)
+# for data visualization
+pacman::p_load(ggplot2)
+pacman::p_load(gridExtra)
+# for providing a prettier RMarkdown (1.0.1)
+pacman::p_load(kableExtra)
+# for providing a general-purpose tool for dynamic report generation  (1.21)
+pacman::p_load(knitr)
+# for dealing with date-type data 
+pacman::p_load(lubridate)
+# for computing the mode of a vector
+pacman::p_load(modeest)
+# for reading csv files (1.3.1)
+pacman::p_load(readr)
+# for modeling, transforming, and visualizing data  (0.8.0.1)
+pacman::p_load(tidyverse)
+# for modern alternative to data frames (2.1.1)
+pacman::p_load(tibble)
+# for simplifying the process of creating tidy data
+pacman::p_load(tidyr)
+```
+
+Tip: it's good practice to load packages in alphabetical order so that you can quickly find which packages you have already loaded.
+
+## Load and Merge Datasets
+
+We begin by loading the logged data on how users interact with the app. An observation in this dataset is a user-story interaction, meaning that each observation is a recorded action that a user takes with respect to a story (e.g. starting or completing a story). This dataset contains all such user-story interactions starting on May 1$^{st}$, 2020 and continuing through January 31$^{st}$, 2021. The variables in this dataset contain information on the user, the story, the action, and the context of the action taken (e.g. the section of the app).
+
+```{r load_logged_data}
+# Load the logged data stored as a CSV file 
+logged_df <- read.csv(file='Datasets/story_tracking.csv')
+
+# Transform the relevant columns into booleans using the as.logical() function
+logged_df$story_started <- as.logical(logged_df$story_started)
+logged_df$story_completed <- as.logical(logged_df$story_completed)
+logged_df$story_liked <- as.logical(logged_df$story_liked)
+```
+
+Next, we load the user-level data. An observation in this dataset is a user. This dataset contains all users who sign-up between May 1$^{st}$, 2020 and January 31$^{st}$, 2021. The variables in this dataset are determined at the time the user signs up for the app. 
+
+```{r load_user_data}
+# Load the user-level data stored as a CSV file 
+child_df <- read.csv(file='Datasets/child.csv')
+```
+
+Then, we load the user id mapping data. This dataset is a cross-walk for string to integer user ids, meaning that it contains a unique string id and its corresponding integer id for each user. We prefer to use the integer user ids in our analysis because they are more convenient than manipulating long string ids; however, the other two datasets (user-story and user-level) contain only the string ids.
+
+```{r load_user_map_data}
+# Load the user id mapping data
+child_map <- read.csv(file='Datasets/child_mapping.csv')
+```
+
+Finally, we merge the three datasets. First, we merge the user-level data with the user id mapping data using the string user ids. This merge adds the integer id to each user. Then, we merge the user-level data with the user-story interaction data. This merge adds the user-level characteristics to each user-story interaction.
+
+```{r merge_user_level_data}
+# Merge the user data with the user id mapping data to get each user's id of an integer type
+child_df <- left_join(x = child_df, y = child_map %>%
+                        select(child_id, child_id_code), 
+                      by = 'child_id')
+
+# Join the user demographic table with the full logged table to get the user's account creation date, acquisition method, and integer-valued id
+logged_df <- left_join(logged_df, child_df %>% 
+                    select(child_id, created_at, child_id_code, user), 
+                  by = c('child_id'))
+
+# Convert the created_at and story_viewed_ts columns to date type for logged data
+logged_df$created_at <- as.Date(logged_df$created_at)
+logged_df$story_viewed_ts <- as.Date(logged_df$story_viewed_ts)
+
+# Get the number of days between date story is viewed and sign up date
+logged_df$days_since_signup <- logged_df$story_viewed_ts - logged_df$created_at
+
+# Rename child id codes (integer values) as child id (string values) as the 
+# integer-valued child ids are easier to use for our analysis
+logged_df <- logged_df %>% 
+  rename(child_id_code = child_id, child_id = child_id_code)
+
+# Define a session in terms of a weekly session
+logged_df$sessions_since_signup = floor(logged_df$days_since_signup/7)
+```
+
+## Clean Dataset
+
+We now have a single merged dataset, `logged_df`, from which we want to remove or correct observations that would lead to an inaccurate interpretation of the data.
+
+### Remove users who sign up prior to May 2020
+
+First, we filter out users who sign up prior to May 2020. Note that while we have data on users who sign up starting in April 2018, our first user-story interaction data is in May 2020. This mismatch would be problematic if we included the user-story interaction data from users who sign up prior to the start of that data. Think about two users who sign up in May 2019, one year before our user-story data starts. One of those users shows up in our user-story data because they are still using the app one year later. The other user does not because they stopped using the app one month after starting. If we included the former user, but not the latter user due to data limitations, our analysis would be biased by over-representing long-term users in our sample compared to the true user population.
+
+```{r filter_users_signup_date}
+
+# Convert the created_at column to date type for user data
+child_df$created_at <- as.Date(child_df$created_at)
+
+# Select users who created their account prior to May 1st, 2020 
+pre_may_users <- child_df %>%
+  dplyr::filter(created_at < "2020-05-01") %>%
+  pull(child_id)
+
+# Sanity check: number of user-story interactions before filtering users
+paste0("Number of user-story interactions before filtering invalid users: ", dim(logged_df)[1])
+
+# Filter out users who created an account prior to May 1st, 2020 
+filtered_logged_df <- logged_df %>%
+  dplyr::filter(!(child_id_code %in% pre_may_users))
+
+filtered_child_df <- child_df %>% 
+  dplyr::filter(!(child_id_code %in% pre_may_users))
+
+# Sanity check: number of user-story interactions after filtering users
+paste0("Number of user-story interactions after filtering invalid users: ", dim(filtered_logged_df)[1])
+```
+
+Each time we modify the dataset, we perform "sanity checks" to ensure the data changed in the expected way. For this data modification, we verify that the total number of users and the total number of user-story interactions has declined (but not by too much).
+
+### Remove false reports of user-story interactions
+
+Next, we want to remove any user-story interactions in which the user did not actually start any stories. In other words, we want to remove false positives on user-story interactions.
+
+```{r filter_users_story_interactions}
+# Sanity check: number of user-story interactions before filtering interactions
+paste0("Number of user-story interactions before filtering invalid interactions: ", dim(filtered_logged_df)[1])
+
+# Filter out invalid user-story interactions (see definition above) 
+filtered_logged_df <- filtered_logged_df %>% 
+  dplyr::filter(story_started == TRUE, sessions_since_signup >= 0)
+
+# Sanity check: number of user-story interactions after filtering interactions
+paste0("Number of user-story interactions before filtering invalid interactions: ", dim(filtered_logged_df)[1]) ## TODO: check w/ python code if # interactions halves
+```
+
+The sanity check for this dataset modification is to verify that the total number of user-story interactions has declined (but not by too much).
+
+### Remove false reports of active users
+
+Then, we want to remove any user who never actually started a story after they signed up on the app. In other words, we want to remove false positives on active users. We can learn little from these users because they never interact with the app after sign-up.
+
+```{r filter_inactive_users}
+# Get users with only 1 day of session activity (note that for the session corresponding to the day a user signed up, the session id, i.e. sessions_since_signup, is 0)
+user_max_sessions <- filtered_logged_df %>% 
+  select(child_id, sessions_since_signup) %>%
+  group_by(child_id) %>% 
+  summarise(sessions_since_signup = max(sessions_since_signup))
+
+inactive_user_ids <- user_max_sessions %>% 
+  dplyr::filter(sessions_since_signup == 0) %>% 
+  pull(child_id)
+
+paste0("Number of users with only 1 day of session activities: ",
+       length(unique(inactive_user_ids)), " vs total number of users in the app: ",
+       filtered_logged_df$child_id %>% unique() %>% length())
+
+# Filter out users with no stories read (equivalently no active sessions recorded) during their app usage period 
+# note here how there are two ways of filtering that perform the same task, one using filtering inside brackets
+# the other using the "filter" function from dplyr
+filtered_logged_df <- filtered_logged_df[!(filtered_logged_df$child_id %in% inactive_user_ids),]
+filtered_child_df <- filtered_child_df %>% 
+  dplyr::filter(!(child_id %in% inactive_user_ids))
+
+# Number of users filtered out vs. number of users remaining for analysis
+paste0("Number of users filtered out: ", dim(inactive_user_ids)[1] ,
+       " vs. number of users remaining for analysis: ", 
+       filtered_logged_df$child_id %>% unique() %>% length())
+```
+
+The sanity check for this dataset modification is to verify that the total number of users has declined (but not by too much).
+
+### Remove demo users 
+
+Lastly, we want to remove any users that were created as a part of a demonstration by S2M. These are fake accounts that we do not want to include in the analysis.
+
+```{r filter_demo_users}
+# Get id of users who are only for "demo", labeled as "DEMO-SCHOOL" in the "user" column
+demo_user_ids <- filtered_child_df %>%
+  dplyr::filter(user == "DEMO-SCHOOL") %>%
+  pull(child_id)
+
+# Sanity check: number of user-story interactions before filtering out demo users
+paste0("Number of user-story interactions before filtering invalid demo users: ", dim(filtered_logged_df)[1])
+
+# Filter out demo users from logged_df as well as child_df
+filtered_logged_df <- filtered_logged_df %>%
+  dplyr::filter(!(child_id_code %in% demo_user_ids))
+filtered_child_df <- filtered_child_df %>% 
+  dplyr::filter(!(child_id_code %in% demo_user_ids))
+
+# Sanity check: number of user-story interactions after filtering out demo users
+paste0("Number of user-story interactions after filtering invalid demo users: ", dim(filtered_logged_df)[1])
+```
+
+The sanity check for this dataset modification is to verify that the total number of users has declined (but not by too much).
+
+# Basic Facts on All Users
+
+In this section, we examine basic facts about all users. The goal here is to take a first pass at the data to understand the context prior to more complex analyses. For example, the plot of all users in our dataset by grade level informs us that we should not expect to learn much about older children since we have little data on 5$^{th}$ and 6$^{th}$ graders.
+
+We first consider when users sign up for the app by plotting user counts by sign-up date in the figure below.
+
+```{r get_all_user_ids}
+# Get all users' ids
+all_users <- filtered_logged_df$child_id %>% unique()
+```
+
+```{r histogram_user_cnt_by_signup}
+# Change created_at column to date type
+filtered_child_df$created_at = as.Date(filtered_child_df$created_at)
+
+# From column `created_at`, extract the year, month, and year-month of sign-up
+filtered_child_df$created_at_year <- format(filtered_child_df$created_at, "%y")
+filtered_child_df$created_at_month <- format(filtered_child_df$created_at, "%m")
+filtered_child_df$created_at_year_month <- format(filtered_child_df$created_at, "%y-%m")
+
+# Store user group id based on their signup date
+filtered_child_df$created_at_grp <- filtered_child_df %>%
+  dplyr::group_by(created_at_year,created_at_month) %>%
+  mutate(created_at_grp = cur_group_id()) %>%
+  ungroup() %>%
+  pull(created_at_grp)
+
+# NOTE: make sure to only rename the child_id and child_id_code columns once -- otherwise your left join code below will break 
+filtered_child_df <- filtered_child_df %>% 
+  rename(child_id_code = child_id, child_id = child_id_code)
+
+# Store user's group id based on their signup and their month-year of signup in the logged data to be used for later analysis
+filtered_logged_df <- left_join(filtered_logged_df,
+          filtered_child_df %>% select(child_id, created_at_grp, created_at_year_month),
+          by = 'child_id')
+
+# Get count of users at each signup date cohort (based on month & year of signup)
+users_compo_signup <- filtered_child_df %>%
+  dplyr::filter(child_id %in% all_users) %>%
+  select(created_at_year_month, child_id) %>%
+  group_by(created_at_year_month) %>%
+  summarize(n_users = n())
+
+# Histogram of user counts by signup date
+ggplot(users_compo_signup, 
+       aes(x = created_at_year_month, y = n_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("Sign-up Date (Year-Month)") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in this graph shows the number of users who signed up for the app in its respective month. This figure shows that the highest sign-up rates were in May. The lowest rates of sign-up were during months with school breaks: June, September, and January.
+
+Next, we consider the grade-level of users of the app by plotting user counts by grade-level in the figure below.
+
+```{r histogram_user_cnt_by_grade}
+# Get count students in each grade level 
+users_compo_grade = filtered_child_df %>%
+  dplyr::filter(child_id %in% all_users) %>%
+  select(grade, child_id) %>%
+  group_by(grade) %>%
+  summarize(n_users = n())
+
+# add a column to help order the bars for each grade in bar plot below (i.e., x = reorder(grade,plot_order))
+users_compo_grade$plot_order = c(4, 5, 6, 7, 8, 9, 2, 1, 3)
+
+# Histogram of user counts by grade level
+ggplot(users_compo_grade, 
+       aes(x = reorder(grade, plot_order), y = n_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("Grade Level") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in this graph shows the number of users in its respective grade-level at the time of sign-up. Most users are in the 1$^{st}$ through 4$^{th}$ grade and, as noted above, very few users are in higher grades. There are also fewer users in nursery and kindergarten relative to users in Grades 1 through 4. 
+
+When you look at the data, you may note another variable of potential interest in examining basic facts of all users: age. We do not consider that variable because most (~85.5%) users are missing this information. 
+
+```{r cnt_missing_obs_age}
+# Percent of observations in filtered user data with missing age information
+(sum(is.na(filtered_child_df$age))/length(filtered_child_df$age))*100
+```
+
+**Exercise**
+*Later in this analysis, we will only consider users who sign-up before November 2020. Replicate the above graphs for this subsample.*
+
+## Constructed Variables 
+
+The two variables considered thus far (sign-up date and grade-level) are raw variables in the data, meaning that they are native to the data file. Many (if not most) variables of interest are constructed variables, meaning that they are transformations of one or more raw variables. Note that you should always create new variables, not override the raw variables, when creating constructed variables.
+
+We begin by constructing a variable that classifies users as short- or long-term. This classification will be important later in this tutorial (and even more so in the next tutorial) when we compare the characteristics of short- and long-term users. 
+
+We want to define user tenure as short-term or long-term based on the number of days since sign-up that the user showed activity on the app. In other words, we want to find the last date in which the user was active in the app, and count the number of days since the user signed up to determine the user's tenure.
+
+We define users as long-term if they show activity at least 90 days after sign-up. Otherwise, users are classified as short-term. Based on this definition, we must update our sample. Note that, for someone who signs up in January 2021, we cannot observe whether they are a short- or long-term user because we do not have activity data 90 days later. So, we must remove any users who sign up less than 90 days prior to the end of the data. With some rounding, this change means dropping users who sign up in November 2020 or later.
+
+```{r filter_users_before_may}
+
+# Select users who created their account after Oct. 31, 2020
+post_nov_users <- filtered_child_df %>%
+  dplyr::filter(created_at >= "2020-10-31") %>%
+  pull(child_id)
+
+# Sanity check: number of user-story interactions before filtering users
+paste0("Number of user-story interactions before filtering users who signed up after Nov. 2020: ", dim(filtered_logged_df)[1])
+
+# Filter out users who created their account after Nov. 1, 2020
+filtered_logged_df_may_nov <- filtered_logged_df %>%
+  dplyr::filter(!(child_id %in% post_nov_users))
+
+filtered_child_df_may_nov <- filtered_child_df %>% 
+  dplyr::filter(!(child_id %in% post_nov_users))
+
+# Sanity check: number of user-story interactions after filtering users
+paste0("Number of user-story interactions after filtering users who signed up after Nov. 2020: ", dim(filtered_logged_df_may_nov)[1])
+
+```
+
+We consider the tenure of users by comparing the number of short-term vs. long-term users in the figure below.
+
+```{r get_user_tenure}
+
+# Get the number of days each users has been on the app
+user_max_usage_sessions <- filtered_logged_df_may_nov %>%
+  select(days_since_signup, child_id) %>%
+  group_by(child_id) %>%
+  summarize(max_days_since_signup = max(days_since_signup))
+
+# Get ids of short-term daily users
+short_term_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup < 90) %>%
+  pull(child_id)
+
+# Get ids of experienced/tenured daily users
+tenured_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup >= 90) %>%
+  pull(child_id)
+
+# Create a dataframe with number of users and user type for plotting
+user_type_df <- data.frame(num_users = c(length(short_term_users),
+                                length(tenured_users)),
+                  user_type = c("Short-term","Long-term"))
+
+ggplot(user_type_df, aes(x = user_type, y = num_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("User Tenure Type") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in this graph shows the number of users who are either short- or long-term. While most users are short-term, the app retains almost one-third of its users for at least 90 days.
+
+The cutoff that defines short- versus long-term is somewhat arbitrary. For example, we choose to define long-term users as those with activity at least 90 days after sign-up. Would our results later in this tutorial differ if we changed that definition to 89 days after sign-up instead? Probably not, but changing the definition to 120 days after sign-up might well alter our results. You should ensure that your results are robust to different definitions of variables when there are multiple valid definitions you could use. This "robustness check" helps to make sure that your data-driven conclusions are strong and not the result of your particular choice of definition.
+
+**Exercise**
+*Choose a different definition of a long-term user and replicate the figure above. Don't forget to redefine your sample to ensure you can identify whether users are short- or long-term with the available data.*
+
+
+# Basic Facts on New Users
+
+In this section, we examine the characteristics of new users. Note that all users began as new users, so this section just takes a different perspective on analyzing all users. We begin by considering how new users come to the app using the figure below.
+
+```{r b2b_b2c_acq_method}
+# Get ids of new daily and weekly users across the entire sample that will used in our analysis below
+new_users_first_day <- filtered_logged_df %>%
+  dplyr::filter(days_since_signup == 0) %>%
+  pull(child_id)
+
+new_users_first_week <- filtered_logged_df%>%
+  dplyr::filter(sessions_since_signup == 0) %>%
+  pull(child_id)
+
+# Get the acquisition method of these new users using the user demographic data
+new_users_compo <- filtered_child_df[filtered_child_df$child_id %in% new_users_first_day,] %>%
+  select(user, child_id) %>%
+  group_by(user) %>%
+  summarize(n_users = n())
+
+ggplot(data = new_users_compo, aes(x = user, y = n_users)) + 
+  geom_bar(stat="identity", fill = 'darkblue') +
+  xlab("User Acquisition Method") + 
+  ylab("New User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in this graph shows the number of users who were acquired through its respective method. B2B users were acquired through partnerships with schools. B2C users found the app on their own (e.g. after viewing a public advertisement, hearing about the app through a friend, or discovering it on the app store), independent of a school. A large majority of users are B2C, but B2B users still comprise a non-trivial portion of the user base.
+
+Paid users are B2C users who chose to pay for the expanded version of the app. These users are reclassified as B2C in the analyses that follow, while expired users are dropped from the analysis (there are few expired users and they are an unknown mix of B2B and B2C users).
+
+Our collaborating partner S2M is particularly interested in understanding the differences between their B2B and B2C users. We next consider the same fixed characteristics we examined in Section *Basic Facts for All Users* separately by B2B and B2C users to evaluate how users acquired through these two methods differ.
+
+We show the proportion of new users who are B2C (i.e. $\frac{\text{# B2C users}}{\text{# B2B users} + \text{B2C users}}$) in the figure below.
+
+```{r b2b_b2c_signup_date}
+# Get count of all users at each signup date cohort (based on month & year of signup)
+new_users_compo_signup <- filtered_child_df %>%
+  dplyr::filter(child_id %in% all_users) %>%
+  select(user, created_at_grp, created_at_year_month, child_id) %>%
+  group_by(user, created_at_grp, created_at_year_month) %>%
+  summarize(num_users = n())
+
+# Separate counts of B2B vs. B2C users -- easier for plotting 
+b2b_new_users_compo_signup <- new_users_compo_signup %>%
+  dplyr::filter(user == 'b2b')
+b2c_new_users_compo_signup <- new_users_compo_signup %>%
+  dplyr::filter(user == 'b2c')
+
+# Count number of all users by signup date
+b2c_new_users_compo_signup$total_users <- new_users_compo_signup %>%
+  group_by(created_at_grp, created_at_year_month) %>%
+  summarize(tot_users = sum(num_users)) %>%
+  pull(tot_users)
+
+# Compute proportion of B2C users in each signup date cohort (prop(B2C) = # B2C / (# B2C + # B2B))
+b2c_new_users_compo_signup$prop_b2c <- b2c_new_users_compo_signup$num_users / b2c_new_users_compo_signup$total_users
+b2c_new_users_compo_signup$created_at_year_month <- as.character(b2c_new_users_compo_signup$created_at_year_month )
+
+# Propotion of B2C users by signup date
+ggplot(b2c_new_users_compo_signup) +
+  geom_point(aes(x = created_at_year_month, y = prop_b2c, 
+                 size = total_users)) +
+  # Line plots only work if the x-axis is a numeric variable, 
+  # so we created a sequence from 1 to the length of the datafram being plotted
+  geom_line(aes(x = seq(1, dim(b2c_new_users_compo_signup)[1]), 
+                y = prop_b2c)) +
+  xlab("Sign-up Date (Year-Month)") + 
+  ylab("Proportion of B2C Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each dot in the graph shows the proportion of new users who are B2C in its respective month. The size of the dot captures the total number of new users in that month (i.e. the information in the first figure of this tutorial above). The plot shows that B2C users account for more than half of new users in all months, and 80-90\% of new users in the latter part of our data.
+
+Next, we consider the breakdown of users' grade-level by B2B vs. B2C users in the figure below.
+
+```{r b2b_b2c_grade_level}
+# Get count of B2B vs. B2C students in each grade level 
+new_users_compo_grade <- filtered_child_df %>% 
+  dplyr::filter(child_id %in% new_users_first_day) %>%
+  select(user, grade, child_id) %>%
+  group_by(user,grade) %>%
+  summarize(num_users = n())
+
+# Separate counts of B2B vs. B2C users -- easier for plotting 
+b2b_new_users_compo_grade <- new_users_compo_grade[new_users_compo_grade$user == 'b2b',]
+b2c_new_users_compo_grade <- new_users_compo_grade[new_users_compo_grade$user == 'b2c',]
+
+# Compute proportion of B2C users in each grade level (prop(B2C) = # B2C in grade X / total # B2C 
+b2b_new_users_compo_grade$prop <- b2b_new_users_compo_grade$num_users/ sum(b2b_new_users_compo_grade$num_users)
+b2c_new_users_compo_grade$prop <- b2c_new_users_compo_grade$num_users / sum(b2c_new_users_compo_grade$num_users)
+
+# add columns to help order the bars for each grade in bar plot below 
+b2b_new_users_compo_grade$plot_order = c(4, 5, 6, 7, 8, 9, 2, 1, 3)
+b2c_new_users_compo_grade$plot_order = c(4, 5, 6, 7, 8, 9, 2, 1, 3)
+
+all_new_users_compo_grade <- rbind(b2c_new_users_compo_grade, b2b_new_users_compo_grade)
+
+ggplot(data = all_new_users_compo_grade,
+       aes(x = reorder(grade, plot_order), y = prop, fill = user)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  xlab("User Grade Level") + 
+  ylab("Proportion of Users") + 
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each pair of bars in this graph show the proportion of B2B and B2C users in its respective grade-level (i.e. $\frac{\text{# of B2B users in grade } x }{\text{total # of B2B users}}$ or $\frac{\text{# of B2C users in grade } x }{\text{total # of B2C users}}$). We use proportion instead of number of users to get at the following question: is a B2B user more or less likely to be from $x$ grade-level relative to a B2C user. The figure shows that B2B users are more likely to be in Kindergarten than B2C users and must less likely to be 4$^{th}$ graders.
+
+## Behavioral Characteristics
+
+We now turn back to new users as a whole. One way to characterize new users is by their initial behavior. What do new users choose to do on the app? How heavily do they use the app when they first sign up? 
+
+We can define "initial" behavioral characteristics in a number of ways. Initial could mean the first day users use the app, the first week, or even the first month.  The definition of initial we use will affect the noisiness of the data we analyze. "Noisiness" in data can be caused by a number of factors; here, the noise comes from users who are unlikely to become consistent users of the app, regardless of the content or structure of the app. For example, when we look at First Day usage, we are including people who download the app, start one story, and then never use the app again. While some of these users may be true potential users of the app, some of them are researchers like us who are just checking out the app to see how it works (i.e. generating noise in the data). Now, those researchers are probably not still using the app a week later, but other reasons could make the first week data noisier than the first two weeks data. So, we look at all three time periods to understand initial behavior.
+
+### First Day 
+
+We begin by considering the first day of usage for new users. The figure below breaks down users by the number of stories they view the first day they use the app.
+
+```{r first_day_story_count}
+# Number of stories new users watched in the first daily session
+new_users_daily_compo <- filtered_logged_df[filtered_logged_df$child_id %in%
+                                       new_users_first_day,]
+
+new_users_compo_first_stories <- new_users_daily_compo %>%
+  dplyr::filter(days_since_signup == 0) %>%
+  select(child_id, days_since_signup) %>%
+  group_by(child_id) %>%
+  summarize(days_since_signup = n()) %>%
+  group_by(days_since_signup) %>%
+  summarize(num_users = n())
+
+# Put all users with more than 10 stories watched in the first session in the same bin
+new_users_compo_first_stories$days_since_signup[new_users_compo_first_stories$days_since_signup > 10] <- 10
+
+# create two new columns to help with plotting, one which changes the 
+# number of days to string so we can have tha last label as 10+ and
+# the other to help set the order of the bars in the bar plot below (x=reorder(...))
+new_users_compo_first_stories$x_axis_label = as.character(new_users_compo_first_stories$days_since_signup)
+new_users_compo_first_stories$x_axis_label[new_users_compo_first_stories$x_axis_label == '10'] <- "10+"
+new_users_compo_first_stories$row_order = seq(1,dim(new_users_compo_first_stories)[1])
+
+# Plot the number of stories viewed in first daily session by user count
+ggplot(new_users_compo_first_stories %>% arrange(),
+       aes(x=reorder(x_axis_label,row_order),y=num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Number of Stories on First Day") + 
+  ylab("New User Count") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the number of users who viewed its respective number of stories on the first day of usage. Users who viewed ten or more stories on the first day are grouped in the last bar. The figure shows that, while the largest grouping is users who viewed just one story on their first day, the majority of users viewed more than 1 story on their first day.
+
+**Exercise**
+*To understand if the density of users at 1 story is due to users who open the app, look at one story, then never use the app again, replicate the histogram plot above for users with activity at least one week after sign-up (or some other amount of time after sign-up if you prefer).*
+
+We next consider the type of story users choose to view first on their first day in the figure below. We choose to look at first story type viewed on the first day instead of something like most frequently viewed story type on the first day, which is a metric closer to what we examine in the first week and first two weeks time period, because of the low number of stories viewed for most users. Consider the simplest case: the largest group of users who viewed one story on their first day. For these users, most frequent and first story are the same. Now consider users who viewed two stories on their first day. If they viewed the same story type, then most frequent and first story are again the same; however, if they viewed two different story types, both of those story types would be counted as "most frequent" and we would simply be looking at all story types viewed. The large number of potential story types means that even users who view 3 or more stories on their first day may well be viewing a different type for each story they view. Instead of trying to understand how much duplication of users there is with most frequent story type, we choose to focus on the less noisy (at least mechanically) first story type viewed.
+
+```{r first_day_story_type}
+# Get new users in first daily session
+new_users_daily_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% new_users_first_day,
+         filtered_logged_df$days_since_signup == 0)
+
+# Get most popular type of story for all new users 
+new_users_daily_compo_story_types <- new_users_daily_compo %>%
+  select(child_id, section_id, story_started_ts) %>%
+  group_by(child_id)
+  
+# Sort users-story interactions by the interaction time stamp and get the first interaction for each user in their first daily session 
+new_users_daily_compo_first_story_type <- new_users_daily_compo_story_types[order(as.Date(new_users_daily_compo_story_types$story_started_ts), new_users_daily_compo_story_types$child_id),] %>% group_by(child_id) %>% dplyr::filter(row_number()==1)
+  
+# Count number of users who watched the same story type as their first story in their first daily session
+new_users_daily_compo_first_story_type <- new_users_daily_compo_first_story_type  %>% group_by(section_id) %>% summarize(num_users = n())
+
+# get the top 6 story types watched first in the first daily session
+top_six_stories <- new_users_daily_compo_first_story_type %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+num_other_stories <- new_users_daily_compo_first_story_type %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(section_id %in% top_six_stories$section_id)) %>%
+  select(num_users) %>% sum()
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_stories <- top_six_stories %>% 
+  add_row(section_id = "Other", 
+          num_users = num_other_stories)
+
+# Plot the top 6 most popular story types by user count
+ggplot(top_six_stories,
+       aes(fct_reorder(section_id, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("First Story Type Viewed on First Day") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in the graph shows the number of users whose first story on their first day was its respective type. The figure shows only the top six story types, with the rest grouped into the "Other" category. The figure shows that the most frequently viewed first story is "Today for You", followed by "Top Story"; however, the large number of users in the "Other" category reveals considerable heterogeneity in users' first story viewed.
+
+Lastly, we consider the app section from which users choose their first story on their first day in the figure below.
+
+```{r first_day_app_feature_type}
+# Get new users in first daily session
+new_users_daily_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% new_users_first_day,
+         filtered_logged_df$days_since_signup == 0)
+
+# Get most popular type of app feature used for all new users 
+new_users_daily_compo_app_feature_types <- new_users_daily_compo %>%
+  select(child_id, source_page_id, story_started_ts) %>%
+  group_by(child_id)
+  
+# Sort users-story interactions by the interaction time stamp and get the first interaction for each user in their first daily session 
+new_users_daily_compo_first_app_feature_type <- new_users_daily_compo_app_feature_types[order(as.Date(new_users_daily_compo_app_feature_types$story_started_ts), new_users_daily_compo_app_feature_types$child_id),] %>% group_by(child_id) %>% dplyr::filter(row_number()==1)
+  
+# Count number of users who used the same app feature to watch their first story in their first daily session
+new_users_daily_compo_first_app_feature_type <- new_users_daily_compo_first_app_feature_type  %>% group_by(source_page_id) %>% summarize(num_users = n())
+
+# Plot the most popular app feature types by user count
+ggplot(new_users_daily_compo_first_app_feature_type,
+       aes(fct_reorder(source_page_id, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("App Section Used to View First Story on First Day") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in the graph shows the number of users whose first story on their first day was found through its respective app section. The figure shows that users predominantly find their first story on the "Home" page, but many users also find their first story on the "Collection" or "Read" pages.
+
+### First Week 
+
+We now examine the first week of usage for new users. To ensure that we are comparing "apples to apples", we must first restrict the sample to users who show some activity at least one week after sign-up. Including someone who uses the app for one day and then quits, for example, would skew our metrics such as "average number of stories per day" and make our results difficult to interpret. For example, consider one user who views 7 stories on their first day then never opens the app again and another user who opens the app each day and views one story. If we included both users in the analysis, they would show the same average number of stories per day, even though they are actually exhibiting very different behavior.
+
+We begin by considering the average number of stories viewed per day in the first week of app usage as shown in the figure below.
+
+```{r first_week_avg_stories}
+# Get users' logged data for their first week since signup
+new_users_weekly_compo <- filtered_logged_df[(filtered_logged_df$child_id %in%
+                                               new_users_first_week) &
+                                              (filtered_logged_df$days_since_signup < 7),]
+
+# Average number of stories per user in first week since signup
+new_users_compo_first_weekly_stories <- new_users_weekly_compo %>%
+  select(child_id, days_since_signup, story_id) %>%
+  group_by(child_id, days_since_signup) %>%
+  summarize(n_stories = n()) %>%
+  group_by(child_id) %>%
+  summarize(n_stories = mean(n_stories)) 
+
+# Put all users with more than 10 stories watched in the same bin
+new_users_compo_first_weekly_stories$n_stories[new_users_compo_first_weekly_stories$n_stories > 10] = 10
+
+# create a column for number of stories where number of stories is rounded to the nearest digit
+# and convert to string. This will help in adding the label 20+ to the bar_graph.
+new_users_compo_first_weekly_stories$n_stories_round = new_users_compo_first_weekly_stories$n_stories %>%
+  round(0)
+new_users_compo_first_weekly_stories$n_stories_char = new_users_compo_first_weekly_stories$n_stories_round %>%
+  as.character()
+
+# Put all users with more than 10 stories watched in the first session in the same bin
+new_users_compo_first_weekly_stories$n_stories_char[new_users_compo_first_weekly_stories$n_stories_char == "10"] = "10+"
+
+# count the number of users who have the same average number stories read in first week
+avg_num_stories_count <- new_users_compo_first_weekly_stories %>%
+  group_by(n_stories_char) %>%
+  summarize(n_stories_round = n()) %>%
+  arrange(n_stories_char)
+
+# Add a column to help set the order of the bars in the bar plot below (x=reorder(...))
+avg_num_stories_count$plot_order = c(1, 10, 2, 3, 4, 5, 6, 7, 8, 9) 
+
+# Plot the average number of stories viewed in the first week by user count
+ggplot(avg_num_stories_count,
+       aes(x=reorder(n_stories_char,plot_order),y=n_stories_round)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Average Number of Stories per Daily Session in the First Week") +
+  ylab("New User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in the graph shows the number of users with its respective average number stories per day in the first week. Users who viewed ten or more stories per day on average are grouped in the last bar. The figure shows that, while the largest grouping is users who viewed just one story per day on average, the majority of users viewed more than 1 story per day on average.
+
+We next consider the type of story users choose most frequently in their first week in the figure below.
+
+```{r first_week_story_type}
+# Get users' logged data for their first week since signup
+new_users_weekly_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% new_users_first_week,
+                days_since_signup < 7)
+
+# Get most popular type of story for all new users 
+new_users_weekly_compo_story_types <- new_users_weekly_compo %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get the top 6 story types
+top_six_stories <- new_users_weekly_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+num_other_stories <- new_users_weekly_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_stories$story_type)) %>%
+  select(num_users) %>% sum()
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_stories <- top_six_stories %>% add_row(story_type = "Other", 
+                            num_users = num_other_stories)
+
+# Plot the top 6 most popular story types by user count
+ggplot(top_six_stories,
+       aes(fct_reorder(story_type, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Viewed Story Types in First Week") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+
+Each bar in the graph shows the number of users whose most frequently viewed story type in their first week was its respective type. As above, the figure shows only the top six story types, with the rest grouped into the "Other" category. The figure shows that the most frequent story types in users' first week follows the same patterns as the first story they view on their first day.
+
+Lastly, we consider the app section from which users most frequently choose their stories in the first week in the figure below.
+
+```{r first_week_app_feature_type}
+# Get most popular type of app feature for all new users 
+new_users_weekly_compo_app_feature_types <- new_users_weekly_compo %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(mode = mlv(source_page_id, method='mfv')) %>%
+  group_by(mode) %>%
+  summarize(num_users = n())
+
+# Plot the app feature types by user count
+ggplot(new_users_weekly_compo_app_feature_types %>% 
+         arrange(desc(num_users)),
+       aes(fct_reorder(mode, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Used App Section to View Stories in First Week") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the number of users who most frequently view stories in their first week through its respective app section. The figure shows that, again, users follow the same patterns in their most frequently used app section in their first week as in the first app section used to view the first story on the first day.
+
+### First Two Weeks
+
+Lastly, we redefine "initial" to consider users first two weeks of app usage. We must again restrict the sample to users who show some activity throughout this initial period, so users who show some activity at least two weeks after sign-up. 
+
+We begin again by considering the average number of stories viewed per day, this time in the first two weeks of app usage, in the figure below.
+
+```{r first_two_weeks_avg_stories}
+# Get users' logged data for their first two week since signup
+new_users_frst_two_weeks_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% new_users_first_week, 
+                filtered_logged_df$days_since_signup < 14)
+
+# Average number of stories per user in first two week since signup
+new_users_compo_frst_two_week_stories <- new_users_frst_two_weeks_compo %>%
+  select(child_id, days_since_signup, story_id) %>%
+  group_by(child_id, days_since_signup) %>%
+  summarize(n_stories = n()) %>%
+  group_by(child_id) %>%
+  summarize(n_stories = mean(n_stories)) 
+
+# Put all users with more than 10 stories watched in the same bin
+new_users_compo_first_weekly_stories$n_stories[new_users_compo_first_weekly_stories$n_stories > 10] = 10
+
+# create a column for number of stories where number of stories is rounded to the nearest digit
+# and convert to string. This will help in adding the label 20+ to the bar_graph.
+new_users_compo_first_weekly_stories$n_stories_round = new_users_compo_first_weekly_stories$n_stories %>%
+  round(0)
+new_users_compo_first_weekly_stories$n_stories_char = new_users_compo_first_weekly_stories$n_stories_round %>%
+  as.character()
+
+# Put all users with more than 10 stories watched in the first session in the same bin
+new_users_compo_first_weekly_stories$n_stories_char[new_users_compo_first_weekly_stories$n_stories_char == "10"] = "10+"
+
+# count the number of users who have the same average number stories read in first week
+avg_num_stories_count <- new_users_compo_first_weekly_stories %>%
+  group_by(n_stories_char) %>%
+  summarize(n_stories_round = n()) %>%
+  arrange(n_stories_char)
+
+# Add a column to help set the order of the bars in the bar plot below (x=reorder(...))
+avg_num_stories_count$plot_order = c(1, 10, 2, 3, 4, 5, 6, 7, 8, 9) 
+
+# Plot the average number of stories viewed in the first week by user count
+ggplot(avg_num_stories_count,
+       aes(x=reorder(n_stories_char,plot_order),y=n_stories_round)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Average Number of Stories per Daily Session in the First Week") +
+  ylab("New User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in the graph shows the number of users with its respective average number stories per day in the first two weeks. Users who viewed ten or more stories per day on average are grouped in the last bar. The figure shows that, while the modal user still views an average of one story per day, the density at one story per day has declined considerably from using the first week as the initial period.
+
+**Exercise**
+*This decline in the number of users who view an average of one story per day could be due to either 1) the change in the sample, or 2) an increase in the number of stories viewed per day in the second week. Create a new graph for each explanation to examine how much of the decline is due to each explanation.*
+
+We next consider the type of story users choose most frequently in their first two weeks in the figure below.
+
+```{r first_two_weeks_story_type}
+# Get most popular type of story for all new users 
+new_users_frst_two_week_compo_story_types <- new_users_frst_two_weeks_compo %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get the top 6 story types
+top_six_stories <- new_users_frst_two_week_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+num_other_stories <- new_users_frst_two_week_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_stories$story_type)) %>%
+  select(num_users) %>% sum()
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_stories <- top_six_stories %>% 
+  add_row(story_type = "Other", 
+          num_users = num_other_stories)
+
+# Plot the most popular story types by user count
+ggplot(top_six_stories,
+       aes(fct_reorder(story_type, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Viewed Story Types in First Two Weeks") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar shows the number of users whose most frequent story type in their first two weeks was its respective type. The figure shows little change from the same figure looking at the first week, with alterations only in which story types make the cut to be included in the graph at the lower frequencies. 
+
+Lastly, we consider the app section from which users most frequently choose their stories in the first two weeks in the figure below.
+
+```{r first_two_weeks_app_feature_type}
+# Get most popular type of app feature for all new users 
+new_users_frst_two_week_compo_app_feature_types <- new_users_frst_two_weeks_compo %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(mode = mlv(source_page_id, method='mfv')) %>%
+  group_by(mode) %>%
+  summarize(num_users = n())
+
+# Plot the most popular story types by user count
+ggplot(new_users_frst_two_week_compo_app_feature_types %>% 
+         arrange(desc(num_users)),
+       aes(fct_reorder(mode, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Used App Section to View Stories in First Two Weeks") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each bar in the graph shows the number of users who most frequently view stories in their first two weeks through its respective app section. Again, we find essentially no changes with the comparable figure for first week usage.
+
+**Exercise**
+*Repeat the above analysis for users' first month of usage. In addition to average number of stories per day, consider average number of stories per week. Don't forget to restrict the sample to the appropriate users.*
+
+**Exercise**
+*Choose one of the above initial time periods and repeat the analysis separately for B2B and B2C users. Evaluate whether B2B use the app differently during the initial time period compared to B2C users.*
+
+# Short-Term v. Long-Term Users
+
+In this last section of this first tutorial, we compare the characteristics of short- and long-term users. This analysis is the first step of a more in-depth analysis of user tenure in the second tutorial aimed at understanding what keeps users returning to the app. Note that, because we cannot determine whether users who sign up in November 2020 or later are short- or long-term users, we restrict the sample to users who sign up prior to November 2020.
+
+```{r short_vs_long_term_users}
+# Get ids of short-term daily and weekly users across the entire sample that will used in our analysis below
+short_term_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup <= 90) %>%
+  pull(child_id)
+
+short_term_users_first_day <- filtered_logged_df_may_nov %>%
+  dplyr::filter(days_since_signup == 0,
+                child_id %in% short_term_users) %>%
+  pull(child_id)
+
+short_term_users_first_week <- filtered_logged_df_may_nov %>%
+  dplyr::filter(sessions_since_signup <= 1,
+                child_id %in% short_term_users) %>%
+  pull(child_id)
+
+# Get ids of experienced/tenured daily and weekly users across the entire sample that will used in our analysis below
+tenured_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup > 90) %>%
+  pull(child_id)
+
+tenured_users_first_day <- filtered_logged_df_may_nov %>%
+  dplyr::filter(days_since_signup == 0,
+                child_id %in% tenured_users) %>%
+  pull(child_id)
+
+tenured_users_first_week <- filtered_logged_df_may_nov %>%
+  dplyr::filter(sessions_since_signup <= 1,
+                child_id %in% tenured_users) %>%
+  pull(child_id)
+```
+
+## Fixed Characteristics
+
+We begin with users' fixed characteristics (i.e. the characteristics that do not change over time): acquisition method, grade-level, and sign-up month. The proportions of short- and long-term users acquired through B2B vs. B2C are shown in the figure below.
+
+```{r short_vs_long_term_users_acq_method}
+# Get the acquisition method of tenured users using the user demographic data
+tenured_users_compo <- filtered_child_df %>% 
+  dplyr::filter(child_id %in% tenured_users_first_day) %>%
+  select(user, child_id) %>%
+  group_by(user) %>%
+  summarize(n_users = n())
+
+# Add a tenure column which will serve as a lable when plotting
+tenured_users_compo$user.type <- 'Long-term'
+
+# Get the acquisition method of short-term users using the user demographic data
+short_term_users_compo <- filtered_child_df %>% 
+  dplyr::filter(child_id %in% short_term_users_first_day) %>%
+  select(user, child_id) %>%
+  group_by(user) %>%
+  summarize(n_users = n())
+
+# Add a short_term user.type column which will serve as a lable when plotting
+short_term_users_compo$user.type <- 'Short-term'
+
+# Compute proportion of short- and long-term users by acquistion method (i.e. prop(short-term) = # short-term that are B2C/ total # short-term users
+tenured_users_compo$prop <- tenured_users_compo$n_users / sum(tenured_users_compo$n_users)
+short_term_users_compo$prop <- short_term_users_compo$n_users / sum(short_term_users_compo$n_users)
+  
+# Combine the two dataframes for easier plotting
+all_user_comp <- rbind(tenured_users_compo, 
+                      short_term_users_compo)
+
+ggplot(data = all_user_comp,
+       aes(x = user, y = prop, fill = user.type)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  xlab("Acquistion Method, by User Tenure") +
+  ylab("Proportion of Users") + 
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the proportion of short- or long-term users acquired through its respective method (i.e. $\frac{\text{# of short-term B2B/C users}}{\text{total # of short-term users}}$ or $\frac{\text{# of long-term B2B/C users}}{\text{total # of long-term users}}$). We use proportion instead of number of users here to get at the following question: is a short-term user more or less likely to be B2B/C relative to a long-term user.  This figure shows that a long-term user is more likely to be a B2B user than a short-term user. 
+
+The proportions of short- and long-term users in each grade-level are shown in the figure below.
+
+```{r short_vs_long_term_users_grade_levels}
+
+# Get count of tenured users in each grade level 
+tenured_users_compo_grade <- filtered_child_df %>%
+  dplyr::filter(child_id %in% tenured_users_first_day) %>%
+  select(grade, child_id) %>%
+  group_by(grade) %>%
+  summarize(n_users = n())
+
+# Add a tenure user.type column which will serve as a lable when plotting
+tenured_users_compo_grade$user.type <- 'Long-term'
+
+# Get count of short-term users in each grade level
+short_term_users_compo_grade <- filtered_child_df %>%
+  dplyr::filter(child_id %in% short_term_users_first_day) %>%
+  select(grade, child_id) %>%
+  group_by(grade) %>%
+  summarize(n_users = n())
+
+# Add a short.term user.type column which will serve as a lable when plotting
+short_term_users_compo_grade$user.type <- 'Short-term'
+
+# Compute proportion of short- and long-term users by grade level (i.e. prop(short-term) = # short-term in Grade 1/ total # short-term users
+tenured_users_compo_grade$prop <- tenured_users_compo_grade$n_users / sum(tenured_users_compo_grade$n_users)
+short_term_users_compo_grade$prop <- short_term_users_compo_grade$n_users / sum(short_term_users_compo_grade$n_users)
+
+# add columns to help order the bars for each grade in bar plot below 
+tenured_users_compo_grade$plot_order = c(4, 5, 6, 7, 2, 1, 3)
+short_term_users_compo_grade$plot_order = c(4, 5, 6, 7, 2, 1, 3)
+  
+# Combine the two dataframes for easier plotting
+all_user_comp_grade = rbind(tenured_users_compo_grade, 
+                      short_term_users_compo_grade)
+
+ggplot(data = all_user_comp_grade,
+       aes(x = reorder(grade, plot_order), y = prop, fill = user.type)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  xlab("Grade-Level, by User Tenure") +
+  ylab("Proportion of Users") + 
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the proportion of short- or long-term users in each grade-level. This figure shows that there are few differences in tenure by grade-level.
+
+The proportions of short- and long-term users by sign-up date are shown in the figure below.
+
+```{r short_vs_long_term_users_signup_date}
+
+# Count of tenured students at each signup date cohort (based on month & year of signup)
+tenured_users_compo_signup = filtered_child_df %>%
+  dplyr::filter(child_id %in% tenured_users_first_day) %>%
+  select(created_at_year_month, child_id) %>%
+  group_by(created_at_year_month) %>%
+  summarize(n_users = n())
+
+# Add a tenure user.type column which will serve as a lable when plotting
+tenured_users_compo_signup$user.type = 'Long-term'
+
+# Count of short-term students at each signup date cohort (based on month & year of signup)
+short_term_users_compo_signup = filtered_child_df %>%
+  dplyr::filter(child_id %in% short_term_users_first_day) %>%
+  select(created_at_year_month, child_id) %>%
+  group_by(created_at_year_month) %>%
+  summarize(n_users = n())
+
+# add a short_term user.type column which will serve as a lable when plotting
+short_term_users_compo_signup$user.type = 'Short-term'
+
+# Compute proportion of short- and long-term users by signup date (i.e. prop(short-term) = # short-term that signed up in Oct. 2020/ total # short-term users
+tenured_users_compo_signup$prop <- tenured_users_compo_signup$n_users / sum(tenured_users_compo_signup$n_users)
+short_term_users_compo_signup$prop <- short_term_users_compo_signup$n_users / sum(short_term_users_compo_signup$n_users)
+  
+# Combine the two dataframes for easier plotting
+all_user_comp_signup <- rbind(tenured_users_compo_signup, 
+                      short_term_users_compo_signup)
+
+ggplot(data = all_user_comp_signup,
+       aes(x = created_at_year_month, y = prop, fill = user.type)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  xlab("Sign-up Date (Year-Month), by User Tenure") +
+  ylab("Proportion of Users") + 
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the proportion of short- or long-term users who signed up in its respective month. This figure shows that long-term users are more likely to sign up in June through August 2020, and less likely to sign up in May or October of 2020.
+
+## Behavioral Characteristics 
+
+Lastly, we consider the initial behavioral characteristics separately for short- and long-term users.
+
+### First Day
+
+We begin by comparing the first day of usage for short- versus long-term users. The figure below breaks down users by the number of stories they view their first day separately by user tenure.
+
+```{r short_long_term_users_first_day_story_counts}
+
+# Number of stories watched in the first daily session by tenured users
+tenured_users_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% tenured_users_first_day)
+
+tenured_users_compo_first_stories <- tenured_users_compo %>% 
+  dplyr::filter(days_since_signup == 0) %>%
+  group_by(child_id) %>%
+  summarize(n_stories_viewed = n_distinct(view_id)) %>%
+  group_by(n_stories_viewed) %>%
+  summarize(n_users = n())
+  
+# Put tenured users with more than 20 stories watched in the first session in the same bin
+tenured_users_compo_first_stories$n_stories_viewed[tenured_users_compo_first_stories$n_stories_viewed > 20] <- 20 
+
+# Add a tenure user.type column which will serve as a label when plotting graphs
+tenured_users_compo_first_stories$user.type <- 'Long-term'
+
+# Number of stories watched in the first daily session by short-term users
+short_term_users_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% short_term_users_first_day)
+
+short_term_users_compo_first_stories <- short_term_users_compo %>% 
+  dplyr::filter(days_since_signup == 0) %>%
+  group_by(child_id) %>%
+  summarize(n_stories_viewed = n_distinct(view_id)) %>%
+#  select(created_at_year_month, child_id) %>%
+  group_by(n_stories_viewed) %>%
+  summarize(n_users = n())
+
+# Put short-term users with more than 20 stories watched in the first session in the same bin
+short_term_users_compo_first_stories$n_stories_viewed[short_term_users_compo_first_stories$n_stories_viewed >20 ] <- 20 
+
+# Add a short_term user.type column which will serve as a label when plotting graphs
+short_term_users_compo_first_stories$user.type <- 'Short-term'
+
+# Compute proportion of short- and long-term users by number of stories watched in first daily session
+tenured_users_compo_first_stories$prop <- tenured_users_compo_first_stories$n_users / sum(tenured_users_compo_first_stories$n_users)
+short_term_users_compo_first_stories$prop <- short_term_users_compo_first_stories$n_users / sum(short_term_users_compo_first_stories$n_users)
+
+# Combine the two dataframes for easier plotting
+all_users_compo_first_stories <- rbind(short_term_users_compo_first_stories,
+                                      tenured_users_compo_first_stories)
+
+# Plot proportion of short- and long-term users by signup date
+ggplot(data = all_users_compo_first_stories,
+       aes(x = n_stories_viewed, y = prop, fill = user.type)) + 
+  geom_bar(stat="identity", position=position_dodge()) + 
+  scale_x_continuous(limits = c(0.5,20.5),
+                     breaks=seq(1, 20)) +
+  xlab("Number of Stories Viewed on First Day, by User Tenure") +
+  ylab("Proportion of Users") + 
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each pair of bars in the graph shows the number of short/long-term users who viewed its respective number of stories on the first day. Users who viewed twenty or more stories on the first day are grouped in the last set of bars. The figure shows no difference in tenure for users who view just 1 story on their first day; however, long-term users are relatively less likely to view 2 or 3 stories on their first day and more likely to view 4 or more stories on their first day.
+
+We next compare the type of story short/long-term users choose first on their first day on the app in the figure below.
+
+```{r short_long_term_users_first_day_story_type}
+# Get most popular type of story for tenured users in their first day of using the app
+tenured_users_daily_compo_story_types <- tenured_users_compo %>%
+  dplyr::filter(days_since_signup == 0)   %>%
+  select(child_id, section_id, story_started_ts) %>%
+  group_by(child_id)
+
+# Sort users-story interactions by the interaction time stamp and get the first interaction for each user in their first daily session 
+tenured_users_daily_compo_first_story_type <- tenured_users_daily_compo_story_types[order(as.Date(tenured_users_daily_compo_story_types$story_started_ts), tenured_users_daily_compo_story_types$child_id),] %>% group_by(child_id) %>% dplyr::filter(row_number()==1)
+
+# Count number of users who watched the same story type as their first story in their first daily session
+tenured_users_daily_compo_first_story_type <- tenured_users_daily_compo_first_story_type  %>% group_by(section_id) %>% summarize(num_users = n())
+
+# Get proportion of each story type for tenured users
+tenured_users_daily_compo_first_story_type$prop = (tenured_users_daily_compo_first_story_type$num_users /
+                                                sum(tenured_users_daily_compo_first_story_type$num_users))
+
+# Add a tenured user_type column for easier plotting
+tenured_users_daily_compo_first_story_type$user_type <- 'Long-term'
+
+# Get the top 6 story types watched first in the first daily session
+top_six_stories_tenured <- tenured_users_daily_compo_first_story_type %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# Get the sum of view counts of all other story types and put it in the `OTHER` bin
+other_story_types_tenured <- tenured_users_daily_compo_first_story_type %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(section_id %in% top_six_stories_tenured$section_id)) %>%
+  select(num_users,prop) %>% 
+  summarize(num_users = sum(num_users),
+            prop =sum(prop))
+
+# Add row to df with top 6 story types as well as all other story types bucketed into the `OTHER` bin
+top_six_story_types_tenured <- top_six_stories_tenured %>% 
+  add_row(section_id = "Other", 
+          num_users = other_story_types_tenured$num_users,
+          prop = other_story_types_tenured$prop,
+          user_type = "Long-term")
+
+# Get most popular type of story for short-term users in their first day of using the app
+short_term_users_daily_compo_story_types <- short_term_users_compo %>%
+  dplyr::filter(days_since_signup == 0)   %>%
+  select(child_id, section_id, story_started_ts) %>%
+  group_by(child_id)
+
+# Sort users-story interactions by the interaction time stamp and get the first interaction for each user in their first daily session 
+short_term_users_daily_compo_first_story_type <- short_term_users_daily_compo_story_types[order(as.Date(short_term_users_daily_compo_story_types$story_started_ts), short_term_users_daily_compo_story_types$child_id),] %>% group_by(child_id) %>% dplyr::filter(row_number()==1)
+
+# Count number of users who watched the same story type as their first story in their first daily session
+short_term_users_daily_compo_first_story_type <- short_term_users_daily_compo_first_story_type  %>% group_by(section_id) %>% summarize(num_users = n())
+
+# Get proportion of each story type for short-term users
+short_term_users_daily_compo_first_story_type$prop = (short_term_users_daily_compo_first_story_type$num_users /
+                                                sum(short_term_users_daily_compo_first_story_type$num_users))
+
+# Add a short_term user_type column for easier plotting
+short_term_users_daily_compo_first_story_type$user_type <- 'Short-term'
+
+# Get the top 6 story types in first daily session for short-term users
+top_six_story_types_short_term <- short_term_users_daily_compo_first_story_type %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# Get the sum of view counts of all other story types and put it in the `OTHER` bin
+other_story_types_short_term <- short_term_users_daily_compo_first_story_type %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(section_id %in% top_six_story_types_short_term$section_id)) %>%
+  select(num_users,prop) %>% 
+  summarize(num_users = sum(num_users),
+            prop =sum(prop))
+
+# Add row to df with top 6 story types as well as all other story types bucketed into the `OTHER` bin
+top_six_story_types_short_term <- top_six_story_types_short_term %>% 
+  add_row(section_id = "Other", 
+          num_users = other_story_types_short_term$num_users,
+          prop = other_story_types_short_term$prop,
+          user_type = "Short-term")
+
+# Combine the two dataframes together for easier plotting
+top_six_story_types_all <- rbind(top_six_story_types_short_term,
+                                 top_six_story_types_tenured)
+
+# Plot proportion of short- and long-term users by story type
+ggplot(data = top_six_story_types_all,
+       aes(fct_reorder(section_id, prop),prop)) + 
+  geom_bar(stat="identity", 
+           aes(fill = user_type),
+           position=position_dodge()) +
+  xlab("First Story Type Viewed on First Day, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the number of short/long-term users whose first story on their first day of usage was its respective type. Again, the figure shows only the top six story types, with the rest grouped into the "Other" category. The figure shows few differences in the choice of first story to view on the first day for short- and long-term users.
+ 
+Lastly, we compare the app section from which short/long-term users choose their first story on their first day in the figure below.
+
+```{r short_long_term_users_first_day_app_feature_type}
+
+# Get most popular type of app feature for tenured users in their first day of using the app
+tenured_users_daily_compo_app_feature_types <- tenured_users_compo %>%
+  dplyr::filter(days_since_signup == 0)   %>%
+  select(child_id, source_page_id, story_started_ts) %>%
+  group_by(child_id)
+
+# Sort users-story interactions by the interaction time stamp and get the first interaction for each user in their first daily session 
+tenured_users_daily_compo_first_app_feature_type <- tenured_users_daily_compo_app_feature_types[order(as.Date(tenured_users_daily_compo_app_feature_types$story_started_ts), tenured_users_daily_compo_app_feature_types$child_id),] %>% group_by(child_id) %>% dplyr::filter(row_number()==1)
+
+# Count number of users who used the same app feature to watch their first story in their first daily session
+tenured_users_daily_compo_first_app_feature_type <- tenured_users_daily_compo_first_app_feature_type  %>% group_by(source_page_id) %>% summarize(num_users = n())
+
+# Get proportion of each story type for tenured users
+tenured_users_daily_compo_first_app_feature_type$prop = (tenured_users_daily_compo_first_app_feature_type$num_users /
+                                                sum(tenured_users_daily_compo_first_app_feature_type$num_users))
+
+# Add a tenured user_type column for easier plotting
+tenured_users_daily_compo_first_app_feature_type$user_type <- 'Long-term'
+
+# Get most popular type of story for short-term users in their first day of using the app
+short_term_users_daily_compo_app_feature_types <- short_term_users_compo %>%
+  dplyr::filter(days_since_signup == 0)   %>%
+  select(child_id, source_page_id, story_started_ts) %>%
+  group_by(child_id)
+
+# Sort users-story interactions by the interaction time stamp and get the first interaction for each user in their first daily session 
+short_term_users_daily_compo_first_app_feature_type <- short_term_users_daily_compo_app_feature_types[order(as.Date(short_term_users_daily_compo_app_feature_types$story_started_ts), short_term_users_daily_compo_app_feature_types$child_id),] %>% group_by(child_id) %>% dplyr::filter(row_number()==1)
+
+# Count number of users who watched the same story type as their first story in their first daily session
+short_term_users_daily_compo_first_app_feature_type <- short_term_users_daily_compo_first_app_feature_type  %>% group_by(source_page_id) %>% summarize(num_users = n())
+
+# Get proportion of each story type for short-term users
+short_term_users_daily_compo_first_app_feature_type$prop = (short_term_users_daily_compo_first_app_feature_type$num_users /
+                                                sum(short_term_users_daily_compo_first_app_feature_type$num_users))
+
+# Add a short_term user_type column for easier plotting
+short_term_users_daily_compo_first_app_feature_type$user_type <- 'Short-term'
+
+# Combine the two dataframes together for easier plotting
+app_feature_types_all <- rbind(short_term_users_daily_compo_first_app_feature_type,
+                                 tenured_users_daily_compo_first_app_feature_type)
+
+# Plot proportion of short- and long-term users by story type
+ggplot(data = app_feature_types_all,
+       aes(fct_reorder(source_page_id, prop),prop)) + 
+  geom_bar(stat="identity", 
+           aes(fill = user_type),
+           position=position_dodge()) +
+  xlab("App Section Used to View First Story on First Day by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+Each bar in the graph shows the number of short/long-term users whose first story on their first day was found through its respective app section. The figure shows that, again, there are few differences in short- and long-term users in this initial choice.
+
+### First Two Weeks
+
+Lastly, we compare the first two weeks of app usage for short- versus long-term users. We must again restrict the sample to users who show some activity at least two weeks after sign-up. 
+
+We begin by comparing the number of stories viewed in the first two weeks of app usage for short- and long-term users in the figure below.
+
+```{r short_long_term_users_first_two_weeks_story_counts}
+tenured_users_compo_first_two_weeks_stories <- tenured_users_compo %>% 
+  dplyr::filter(days_since_signup < 14) %>%
+  group_by(child_id) %>%
+  summarize(n_stories_viewed = n_distinct(view_id)) %>%
+  group_by(n_stories_viewed) %>%
+  summarize(n_users = n())
+  
+new_users_compo_first_weekly_stories <- new_users_weekly_compo %>%
+  select(child_id, days_since_signup, story_id) %>%
+  group_by(child_id, days_since_signup) %>%
+  summarize(n_stories = n()) %>%
+  group_by(child_id) %>%
+  summarize(n_stories = mean(n_stories)) 
+
+# Put tenured users with more than 20 stories watched in the first session in the same bin
+tenured_users_compo_first_two_weeks_stories$n_stories_viewed[tenured_users_compo_first_two_weeks_stories$n_stories_viewed> 20] <- 20 
+
+# Add a tenure user.type column which will serve as a label when plotting graphs
+tenured_users_compo_first_two_weeks_stories$user.type <- 'Long-term'
+
+short_term_users_compo_first_two_weeks_stories <- short_term_users_compo %>% 
+  dplyr::filter(days_since_signup < 14) %>%
+  group_by(child_id) %>%
+  summarize(n_stories_viewed = n_distinct(view_id)) %>%
+  group_by(n_stories_viewed) %>%
+  summarize(n_users = n())
+
+# Put short-term users with more than 20 stories watched in the first session in the same bin
+short_term_users_compo_first_two_weeks_stories$n_stories_viewed[short_term_users_compo_first_two_weeks_stories$n_stories_viewed >20 ] <- 20 
+
+# Add a short_term user.type column which will serve as a label when plotting graphs
+short_term_users_compo_first_two_weeks_stories$user.type <- 'Short-term'
+
+# Compute proportion of short- and long-term users by number of stories watched in first daily session
+tenured_users_compo_first_two_weeks_stories$prop <- tenured_users_compo_first_two_weeks_stories$n_users / sum(tenured_users_compo_first_two_weeks_stories$n_users)
+
+short_term_users_compo_first_two_weeks_stories$prop <- short_term_users_compo_first_two_weeks_stories$n_users / sum(short_term_users_compo_first_two_weeks_stories$n_users)
+
+# Combine the two dataframes for easier plotting
+all_users_compo_first_two_weeks_stories <- rbind(tenured_users_compo_first_two_weeks_stories,
+                                       short_term_users_compo_first_two_weeks_stories)
+
+# Plot proportion of short- and long-term users by signup date
+ggplot(data = all_users_compo_first_two_weeks_stories,
+       aes(x = n_stories_viewed, y = prop, fill = user.type)) + 
+  geom_bar(stat="identity", position=position_dodge()) + 
+  scale_x_continuous(limits = c(0.5,20.5),
+                     breaks=seq(1, 20)) +
+  xlab("Average Number of Stories Viewed per Day in First Two Weeks, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each pair of bars in the graph shows the number of short/long-term users with its respective number of stories viewed in the first two weeks. Interestingly, the figure shows that long-term users are much *more* likely to view just one story on average per day during the first two weeks, and less likely to view 2 to 4 stories per day.
+
+We next compare the type of story short- versus long-term users choose most frequently in their first two weeks in the figure below.
+
+```{r short_long_first_two_weeks_story_type}
+# Get most popular type of story for tenured users in their first two weeks of using the app
+tenured_users_frst_two_week_compo_story_types <- tenured_users_compo %>%
+  dplyr::filter(days_since_signup < 14) %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get proportion of each story type
+tenured_users_frst_two_week_compo_story_types$prop = (tenured_users_frst_two_week_compo_story_types$num_users /
+                                                      sum(tenured_users_frst_two_week_compo_story_types$num_users))
+
+# add a tenured user_type column for easier plotting
+tenured_users_frst_two_week_compo_story_types$user_type <- 'Long-term'
+
+# get the top 6 story types
+top_six_story_types_tenured <- tenured_users_frst_two_week_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+other_story_types_tenured <- tenured_users_frst_two_week_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_story_types_tenured$story_type)) %>%
+  select(num_users,prop) %>% 
+  summarize(num_users = sum(num_users),
+            prop =sum(prop))
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_story_types_tenured <- top_six_story_types_tenured %>% 
+  add_row(story_type = "Other", 
+          num_users = other_story_types_tenured$num_users,
+          prop = other_story_types_tenured$prop,
+          user_type = "Long-term")
+
+# Get most popular type of story for short-term users in their first day of using the app
+short_term_users_frst_two_week_compo_story_types <- short_term_users_compo %>%
+  dplyr::filter(days_since_signup < 14) %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get proportion of each story type
+short_term_users_frst_two_week_compo_story_types$prop = (short_term_users_frst_two_week_compo_story_types$num_users /
+                                                         sum(short_term_users_frst_two_week_compo_story_types$num_users))
+
+# add a short_term user_type column for easier plotting
+short_term_users_frst_two_week_compo_story_types$user_type <- 'Short-term'
+
+# get the top 6 story types
+top_six_story_types_short_term <- short_term_users_frst_two_week_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+other_story_types_short_term <- short_term_users_frst_two_week_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_story_types_short_term$story_type)) %>%
+  select(num_users,prop) %>% 
+  summarize(num_users = sum(num_users),
+            prop =sum(prop))
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_story_types_short_term <- top_six_story_types_short_term %>% 
+  add_row(story_type = "Other", 
+          num_users = other_story_types_short_term$num_users,
+          prop = other_story_types_short_term$prop,
+          user_type = "Short-term")
+
+# combine the two dataframes together for easier plotting
+top_six_story_types_all <- rbind(top_six_story_types_short_term,
+                                 top_six_story_types_tenured)
+
+# Plot proportion of short- and long-term users by story type
+ggplot(data = top_six_story_types_all,
+       aes(fct_reorder(story_type, prop),prop)) + 
+  geom_bar(stat="identity", 
+           aes(fill = user_type),
+           position=position_dodge()) +
+  xlab("Most Frequently Viewed Story Types in First Two Weeks, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Each pair of bars in the graph shows the number of short/long-term users whose most frequent story type in their first two weeks was its respective type. The figure shows no differences between short- and long-term users with respect to the top three story types.
+
+Lastly, we compare the app section from which short- versus long-term users most frequently choose their stories in the first two weeks in the figure below.
+
+```{r short_long_term_users_first_two_weeks_app_feature_type}
+# Get most popular type of app feature for tenured users in their first day of using the app
+tenured_users_daily_compo_source_types <- tenured_users_compo %>%
+  dplyr::filter(days_since_signup < 14) %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(source_type = mlv(source_page_id, method='mfv')) %>%
+  group_by(source_type) %>%
+  summarize(num_users = n())
+
+# Get proportion of each app feature type used in the first two weeks in the app for tenured users
+tenured_users_daily_compo_source_types$prop = (tenured_users_daily_compo_source_types$num_users /
+                                                sum(tenured_users_daily_compo_source_types$num_users))
+
+# Add a tenured user_type column for easier plotting
+tenured_users_daily_compo_source_types$user_type <- 'Long-term'
+
+# Get most popular type of app feature for short-term users in their first two weeks of using the app
+short_term_users_daily_compo_source_types <- short_term_users_compo %>%
+  dplyr::filter(days_since_signup < 14) %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(source_type = mlv(source_page_id, method='mfv')) %>%
+  group_by(source_type) %>%
+  summarize(num_users = n())
+
+# Get proportion of each app feature type used in the first daily session for short-term users
+short_term_users_daily_compo_source_types$prop = (short_term_users_daily_compo_source_types$num_users /
+                                                sum(short_term_users_daily_compo_source_types$num_users))
+
+# Add a short_term user_type column for easier plotting
+short_term_users_daily_compo_source_types$user_type <- 'Short-term'
+
+# Combine the two dataframes together for easier plotting
+all_users_daily_compo_source_types <- rbind(short_term_users_daily_compo_source_types,
+                                 tenured_users_daily_compo_source_types)
+
+# Plot proportion of short- and long-term users by app feature type
+ggplot(data = all_users_daily_compo_source_types,
+       aes(fct_reorder(source_type, prop),prop)) + 
+  geom_bar(stat="identity", 
+           aes(fill = user_type),
+           position=position_dodge()) +
+  xlab("Most Frequently Used App Section to View Stories in First Two Weeks, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+
+Each pair of bars in the graph shows the number of short/long-term users who most frequently view stories in their first two weeks through its respective app section. The figure shows few differences again between short- and long-term users in this behavior.
+
+**Exercise**
+*Repeat the above analysis for either short/long-term users' first week or first month of usage. Don't forget to restrict the sample to the appropriate users.*
