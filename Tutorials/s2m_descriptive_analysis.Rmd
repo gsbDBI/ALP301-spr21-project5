@@ -2,7 +2,7 @@
 ---
 title: 'Stones2Milestones Path Analysis Project: Understanding the Users and their
   Interactions with the App '
-author: "YOUR NAME"
+author: "Muhammad Ahmed Chaudhry"
 date: "April 2021"
 output:
   pdf_document:
@@ -41,7 +41,7 @@ knitr::opts_chunk$set(
 
 In this section, we load and merge the three datasets - user-story interaction data, user-level data, and user id mapping data - needed for the analyses in these tutorials, then perform some cleaning of the data. While the datasets you work with have largely already been cleaned, meaning that corrupt or inaccurate data has been detected and corrected, we do some additional cleaning particularly relevant to our data analyses. The end goal of this section is to have a single dataset ready for analysis.
 
-We choose to merge the data into a single dataset for the purposes of this analysis; however, this approach may not be optimal for all analyses. Merging all datasets together first to analyze one large rectangular dataset can make the dataset needlessly big. Generally, you should break down an analysis by which datasets are needed and load just the need dataset(s).
+We choose to merge the data into a single dataset for the purposes of this analysis; however, this approach may not be optimal for all analyses. Merging all datasets together first to analyze one large rectangular dataset can make the dataset needlessly big. Generally, you should break down an analysis by which datasets are needed and load just the needed dataset(s).
 
 ## Load the Necessary Packages
 
@@ -345,6 +345,40 @@ When you look at the data, you may note another variable of potential interest i
 
 **Exercise**
 *Later in this analysis, we will only consider users who sign-up before November 2020. Replicate the above graphs for this subsample.*
+
+
+
+### Consider only users who sign up prior to November 2020
+
+Here we assume that when we are considering only users who signed up prior to November 2020, this filtering is to occur after the processing in sections `filter_users_signup_date`, `filter_users_story_interaction`, `filter_inactive_users`, and `filter_demo_users` has occurred. 
+
+```{r consider_users_signup_date}
+
+# Select users who created their account prior to Nov 1st, 2020 
+pre_nov_users <- child_df %>%
+  dplyr::filter(created_at < "2020-11-01") %>%
+  pull(child_id)
+
+# Sanity check: number of user-story interactions before filtering users
+paste0("Number of user-story interactions before filtering invalid users: ", dim(filtered_logged_df)[1])
+
+# Filter out users who created an account after Nov 1st, 2020 
+filtered_logged_df_nov <- filtered_logged_df_nov %>%
+  dplyr::filter(!(child_id_code %in% pre_may_users))
+
+filtered_child_df <- child_df %>% 
+  dplyr::filter(!(child_id_code %in% pre_may_users))
+
+# Sanity check: number of user-story interactions after filtering users
+paste0("Number of user-story interactions after filtering invalid users: ", dim(filtered_logged_df)[1])
+```
+
+
+
+
+
+
+
 
 ## Constructed Variables 
 
