@@ -83,7 +83,7 @@ pacman::p_load(scales)
 
 ```{r load_data}
 # Load the logged data stored as a CSV file 
-logged_df <- read.csv(file='story_tracking.csv')
+logged_df <- read.csv(file='Datasets/story_tracking.csv')
 
 # Transform the relevant columns into booleans using the as.logical() function
 logged_df$story_started <- as.logical(logged_df$story_started)
@@ -91,10 +91,10 @@ logged_df$story_completed <- as.logical(logged_df$story_completed)
 logged_df$story_liked <- as.logical(logged_df$story_liked)
 
 # Load the user-level data stored as a CSV file 
-child_df <- read.csv(file='child.csv')
+child_df <- read.csv(file='Datasets/child.csv')
 
 # Load the user id mapping data
-child_map <- read.csv(file='child_mapping.csv')
+child_map <- read.csv(file='Datasets/child_mapping.csv')
 
 ```
 
