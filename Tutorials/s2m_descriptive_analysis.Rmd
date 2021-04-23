@@ -167,7 +167,7 @@ filtered_logged_df <- logged_df %>%
   dplyr::filter(!(child_id_code %in% pre_may_users))
 
 filtered_child_df <- child_df %>% 
-  dplyr::filter(!(child_id_code %in% pre_may_users))
+  dplyr::filter(!(child_id %in% pre_may_users))
 
 # Sanity check: number of user-story interactions after filtering users
 paste0("Number of user-story interactions after filtering invalid users: ", dim(filtered_logged_df)[1])
@@ -336,7 +336,7 @@ ggplot(users_compo_grade,
 
 Each bar in this graph shows the number of users in its respective grade-level at the time of sign-up. Most users are in the 1$^{st}$ through 4$^{th}$ grade and, as noted above, very few users are in higher grades. There are also fewer users in nursery and kindergarten relative to users in Grades 1 through 4. 
 
-When you look at the data, you may note another variable of potential interest in examining basic facts of all users: age. We do not consider that variable because most (~85.5%) users are missing this information. 
+When you look at the data, you may note another variable of potential interest in examining basic facts of all users: age. We do not consider that variable because most (~85.5%) (actually 95.0%) users are missing this information. 
 
 ```{r cnt_missing_obs_age}
 # Percent of observations in filtered user data with missing age information
@@ -347,37 +347,105 @@ When you look at the data, you may note another variable of potential interest i
 *Later in this analysis, we will only consider users who sign-up before November 2020. Replicate the above graphs for this subsample.*
 
 
-
 ### Consider only users who sign up prior to November 2020
 
 Here we assume that when we are considering only users who signed up prior to November 2020, this filtering is to occur after the processing in sections `filter_users_signup_date`, `filter_users_story_interaction`, `filter_inactive_users`, and `filter_demo_users` has occurred. 
 
 ```{r consider_users_signup_date}
 
+# Convert the created_at column to date type for user data
+filtered_child_df$created_at <- as.Date(filtered_child_df$created_at)
+
 # Select users who created their account prior to Nov 1st, 2020 
-pre_nov_users <- child_df %>%
+pre_nov_users <- filtered_child_df %>%
   dplyr::filter(created_at < "2020-11-01") %>%
-  pull(child_id)
+  pull(child_id_code)
 
 # Sanity check: number of user-story interactions before filtering users
 paste0("Number of user-story interactions before filtering invalid users: ", dim(filtered_logged_df)[1])
 
-# Filter out users who created an account after Nov 1st, 2020 
-filtered_logged_df_nov <- filtered_logged_df_nov %>%
-  dplyr::filter(!(child_id_code %in% pre_may_users))
+# Keep only users who created an account before Nov 1st, 2020 
+filtered_logged_df_nov <- filtered_logged_df %>%
+  dplyr::filter(child_id_code %in% pre_nov_users)
 
-filtered_child_df <- child_df %>% 
-  dplyr::filter(!(child_id_code %in% pre_may_users))
+filtered_child_df_nov <- filtered_child_df %>% 
+  dplyr::filter(child_id_code %in% pre_nov_users)
 
 # Sanity check: number of user-story interactions after filtering users
-paste0("Number of user-story interactions after filtering invalid users: ", dim(filtered_logged_df)[1])
+paste0("Number of user-story interactions after filtering invalid users: ", dim(filtered_logged_df_nov)[1])
 ```
 
+The sanity check for this dataset modification is to verify that the total number of users has declined (but not by too much).
+
+```{r histogram_user_cnt_by_signup_nov}
+# Change created_at column to date type
+#filtered_child_df$created_at = as.Date(filtered_child_df$created_at)
+
+# From column `created_at`, extract the year, month, and year-month of sign-up
+#filtered_child_df$created_at_year <- format(filtered_child_df$created_at, "%y")
+#filtered_child_df$created_at_month <- format(filtered_child_df$created_at, "%m")
+#filtered_child_df$created_at_year_month <- format(filtered_child_df$created_at, "%y-%m")
+
+# Store user group id based on their signup date
+# filtered_child_df$created_at_grp <- filtered_child_df %>%
+#   dplyr::group_by(created_at_year,created_at_month) %>%
+#   mutate(created_at_grp = cur_group_id()) %>%
+#   ungroup() %>%
+#   pull(created_at_grp)
+
+# NOTE: make sure to only rename the child_id and child_id_code columns once -- otherwise your left join code below will break 
+# filtered_child_df <- filtered_child_df %>% 
+#   rename(child_id_code = child_id, child_id = child_id_code)
+
+# Store user's group id based on their signup and their month-year of signup in the logged data to be used for later analysis
+# filtered_logged_df <- left_join(filtered_logged_df,
+#           filtered_child_df %>% select(child_id, created_at_grp, created_at_year_month),
+#           by = 'child_id')
+
+# Get count of users at each signup date cohort (based on month & year of signup)
+users_compo_signup_nov <- filtered_child_df_nov %>%
+  dplyr::filter(child_id %in% all_users) %>%
+  select(created_at_year_month, child_id) %>%
+  group_by(created_at_year_month) %>%
+  summarize(n_users = n())
+
+# Histogram of user counts by signup date
+ggplot(users_compo_signup_nov, 
+       aes(x = created_at_year_month, y = n_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("Sign-up Date (Year-Month)") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+We see that this graph is just a more restricted version of the graph represented earlier, with aligning Number of Users for each month.
 
 
+```{r histogram_user_cnt_by_grade_nov}
+# Get count students in each grade level 
+users_compo_grade_nov = filtered_child_df_nov %>%
+  dplyr::filter(child_id %in% all_users) %>%
+  select(grade, child_id) %>%
+  group_by(grade) %>%
+  summarize(n_users = n())
 
+# add a column to help order the bars for each grade in bar plot below (i.e., x = reorder(grade,plot_order))
+users_compo_grade_nov$plot_order = c(4, 5, 6, 7, 2, 1, 3)
 
-
+# Histogram of user counts by grade level
+ggplot(users_compo_grade_nov, 
+       aes(x = reorder(grade, plot_order), y = n_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("Grade Level") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+Again, each bar in this graph shows the number of users in its respective grade-level at the time of sign-up. Most users are in the 1$^{st}$ through 4$^{th}$ grade but differently from as noted above, there are no users in higher grades in this sub-sample. There are also fewer users in nursery and kindergarten relative to users in Grades 1 through 4.
 
 
 ## Constructed Variables 
@@ -394,7 +462,7 @@ We define users as long-term if they show activity at least 90 days after sign-u
 
 # Select users who created their account after Oct. 31, 2020
 post_nov_users <- filtered_child_df %>%
-  dplyr::filter(created_at >= "2020-10-31") %>%
+  dplyr::filter(created_at > "2020-10-31") %>%
   pull(child_id)
 
 # Sanity check: number of user-story interactions before filtering users
