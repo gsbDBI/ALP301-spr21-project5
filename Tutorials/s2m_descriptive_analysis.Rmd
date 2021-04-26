@@ -377,6 +377,8 @@ paste0("Number of user-story interactions after filtering invalid users: ", dim(
 
 The sanity check for this dataset modification is to verify that the total number of users has declined (but not by too much).
 
+Now we create the plots:
+
 ```{r histogram_user_cnt_by_signup_nov}
 # Change created_at column to date type
 #filtered_child_df$created_at = as.Date(filtered_child_df$created_at)
@@ -639,7 +641,7 @@ ggplot(data = all_new_users_compo_grade,
         panel.grid.minor = element_blank())
 ```
 
-Each pair of bars in this graph show the proportion of B2B and B2C users in its respective grade-level (i.e. $\frac{\text{# of B2B users in grade } x }{\text{total # of B2B users}}$ or $\frac{\text{# of B2C users in grade } x }{\text{total # of B2C users}}$). We use proportion instead of number of users to get at the following question: is a B2B user more or less likely to be from $x$ grade-level relative to a B2C user. The figure shows that B2B users are more likely to be in Kindergarten than B2C users and must less likely to be 4$^{th}$ graders.
+Each pair of bars in this graph show the proportion of B2B and B2C users in its respective grade-level (i.e. $\frac{\text{# of B2B users in grade } x }{\text{total # of B2B users}}$ or $\frac{\text{# of B2C users in grade } x }{\text{total # of B2C users}}$). We use proportion instead of number of users to get at the following question: is a B2B user more or less likely to be from $x$ grade-level relative to a B2C user. The figure shows that B2B users are more likely to be in Kindergarten than B2C users and much less likely to be 4$^{th}$ graders.
 
 ## Behavioral Characteristics
 
@@ -668,7 +670,7 @@ new_users_compo_first_stories <- new_users_daily_compo %>%
 new_users_compo_first_stories$days_since_signup[new_users_compo_first_stories$days_since_signup > 10] <- 10
 
 # create two new columns to help with plotting, one which changes the 
-# number of days to string so we can have tha last label as 10+ and
+# number of days to string so we can have the last label as 10+ and
 # the other to help set the order of the bars in the bar plot below (x=reorder(...))
 new_users_compo_first_stories$x_axis_label = as.character(new_users_compo_first_stories$days_since_signup)
 new_users_compo_first_stories$x_axis_label[new_users_compo_first_stories$x_axis_label == '10'] <- "10+"
@@ -691,6 +693,55 @@ Each bar in the graph shows the number of users who viewed its respective number
 
 **Exercise**
 *To understand if the density of users at 1 story is due to users who open the app, look at one story, then never use the app again, replicate the histogram plot above for users with activity at least one week after sign-up (or some other amount of time after sign-up if you prefer).*
+
+
+```{r first_day_story_count_filtered}
+
+# Variable to adjust to check for activity a certain number of days after sign-up
+active_user_day <- 7
+
+# Filter out users who have no activity a week out
+users_active_after_first_week <- filtered_logged_df %>%
+  dplyr::filter(days_since_signup >= active_user_day) %>%
+  pull(child_id)
+
+# Number of stories new users watched in the first daily session
+new_users_daily_compo_filtered <- filtered_logged_df[(filtered_logged_df$child_id %in%
+                                 users_active_after_first_week)&(filtered_logged_df$child_id                                      %in% new_users_first_day),]
+
+new_users_compo_first_stories_filtered <- new_users_daily_compo_filtered %>%
+  dplyr::filter(days_since_signup == 0) %>%
+  select(child_id, days_since_signup) %>%
+  group_by(child_id) %>%
+  summarize(days_since_signup = n()) %>%
+  group_by(days_since_signup) %>%
+  summarize(num_users = n())
+
+# Put all users with more than 10 stories watched in the first session in the same bin
+new_users_compo_first_stories_filtered$days_since_signup[new_users_compo_first_stories_filtered$days_since_signup > 10] <- 10
+
+# create two new columns to help with plotting, one which changes the 
+# number of days to string so we can have the last label as 10+ and
+# the other to help set the order of the bars in the bar plot below (x=reorder(...))
+new_users_compo_first_stories_filtered$x_axis_label = as.character(new_users_compo_first_stories_filtered$days_since_signup)
+new_users_compo_first_stories_filtered$x_axis_label[new_users_compo_first_stories_filtered$x_axis_label == '10'] <- "10+"
+new_users_compo_first_stories_filtered$row_order = seq(1,dim(new_users_compo_first_stories_filtered)[1])
+
+# Plot the number of stories viewed in first daily session by user count
+ggplot(new_users_compo_first_stories_filtered %>% arrange(),
+       aes(x=reorder(x_axis_label,row_order),y=num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Number of Stories on First Day for Users who remained active after a Week") + 
+  ylab("New User Count") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+So we see that the plot after filtering for users who had activity at least 7 days after signing up is identical to the plot obatined previously. Therefore it is not the case that the density of users at 1 story is due to users who open the app, look at one story, then never use the app again.
+
 
 We next consider the type of story users choose to view first on their first day in the figure below. We choose to look at first story type viewed on the first day instead of something like most frequently viewed story type on the first day, which is a metric closer to what we examine in the first week and first two weeks time period, because of the low number of stories viewed for most users. Consider the simplest case: the largest group of users who viewed one story on their first day. For these users, most frequent and first story are the same. Now consider users who viewed two stories on their first day. If they viewed the same story type, then most frequent and first story are again the same; however, if they viewed two different story types, both of those story types would be counted as "most frequent" and we would simply be looking at all story types viewed. The large number of potential story types means that even users who view 3 or more stories on their first day may well be viewing a different type for each story they view. Instead of trying to understand how much duplication of users there is with most frequent story type, we choose to focus on the less noisy (at least mechanically) first story type viewed.
 
@@ -925,20 +976,20 @@ new_users_compo_frst_two_week_stories <- new_users_frst_two_weeks_compo %>%
   summarize(n_stories = mean(n_stories)) 
 
 # Put all users with more than 10 stories watched in the same bin
-new_users_compo_first_weekly_stories$n_stories[new_users_compo_first_weekly_stories$n_stories > 10] = 10
+new_users_compo_frst_two_week_stories$n_stories[new_users_compo_frst_two_week_stories$n_stories > 10] = 10
 
 # create a column for number of stories where number of stories is rounded to the nearest digit
 # and convert to string. This will help in adding the label 20+ to the bar_graph.
-new_users_compo_first_weekly_stories$n_stories_round = new_users_compo_first_weekly_stories$n_stories %>%
+new_users_compo_frst_two_week_stories$n_stories_round = new_users_compo_frst_two_week_stories$n_stories %>%
   round(0)
-new_users_compo_first_weekly_stories$n_stories_char = new_users_compo_first_weekly_stories$n_stories_round %>%
+new_users_compo_frst_two_week_stories$n_stories_char = new_users_compo_frst_two_week_stories$n_stories_round %>%
   as.character()
 
 # Put all users with more than 10 stories watched in the first session in the same bin
-new_users_compo_first_weekly_stories$n_stories_char[new_users_compo_first_weekly_stories$n_stories_char == "10"] = "10+"
+new_users_compo_frst_two_week_stories$n_stories_char[new_users_compo_frst_two_week_stories$n_stories_char == "10"] = "10+"
 
 # count the number of users who have the same average number stories read in first week
-avg_num_stories_count <- new_users_compo_first_weekly_stories %>%
+avg_num_stories_count <- new_users_compo_frst_two_week_stories %>%
   group_by(n_stories_char) %>%
   summarize(n_stories_round = n()) %>%
   arrange(n_stories_char)
@@ -950,7 +1001,7 @@ avg_num_stories_count$plot_order = c(1, 10, 2, 3, 4, 5, 6, 7, 8, 9)
 ggplot(avg_num_stories_count,
        aes(x=reorder(n_stories_char,plot_order),y=n_stories_round)) +
   geom_bar(stat = 'identity', fill='darkblue') +
-  xlab("Average Number of Stories per Daily Session in the First Week") +
+  xlab("Average Number of Stories per Daily Session in the First Two Weeks") +
   ylab("New User Count") +
   theme_bw() +
   theme(axis.text.x=element_text(hjust=0.5), 
@@ -1033,6 +1084,163 @@ Each bar in the graph shows the number of users who most frequently view stories
 
 **Exercise**
 *Repeat the above analysis for users' first month of usage. In addition to average number of stories per day, consider average number of stories per week. Don't forget to restrict the sample to the appropriate users.*
+
+```{r first_month_story_type}
+
+# Get users' logged data for their first month since signup
+new_users_frst_month_compo <- filtered_logged_df %>%
+  dplyr::filter(child_id %in% new_users_first_week, 
+                filtered_logged_df$days_since_signup < 30)
+
+# Get most popular type of story for all new users 
+new_users_frst_month_compo_story_types <- new_users_frst_month_compo %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get the top 6 story types
+top_six_stories <- new_users_frst_month_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+num_other_stories <- new_users_frst_month_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_stories$story_type)) %>%
+  select(num_users) %>% sum()
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_stories <- top_six_stories %>% 
+  add_row(story_type = "Other", 
+          num_users = num_other_stories)
+
+# Plot the most popular story types by user count
+ggplot(top_six_stories,
+       aes(fct_reorder(story_type, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Viewed Story Types in First Month") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+```{r first_month_app_feature_type}
+# Get most popular type of app feature for all new users 
+new_users_frst_month_compo_app_feature_types <- new_users_frst_month_compo %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(mode = mlv(source_page_id, method='mfv')) %>%
+  group_by(mode) %>%
+  summarize(num_users = n())
+
+# Plot the most popular story types by user count
+ggplot(new_users_frst_month_compo_app_feature_types %>% 
+         arrange(desc(num_users)),
+       aes(fct_reorder(mode, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Used App Section to View Stories in First Month") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+These are very similar to the plot for usage in the first two weeks.
+
+```{r first_month_avg_stories}
+
+
+# Average number of stories per user in first two week since signup
+new_users_compo_frst_month_stories <- new_users_frst_month_compo %>%
+  select(child_id, days_since_signup, story_id) %>%
+  group_by(child_id, days_since_signup) %>%
+  summarize(n_stories = n()) %>%
+  group_by(child_id) %>%
+  summarize(n_stories = mean(n_stories)) 
+
+# Put all users with more than 10 stories watched in the same bin
+new_users_compo_frst_month_stories$n_stories[new_users_compo_frst_month_stories$n_stories > 10] = 10
+
+# create a column for number of stories where number of stories is rounded to the nearest digit
+# and convert to string. This will help in adding the label 20+ to the bar_graph.
+new_users_compo_frst_month_stories$n_stories_round = new_users_compo_frst_month_stories$n_stories %>%
+  round(0)
+new_users_compo_frst_month_stories$n_stories_char = new_users_compo_frst_month_stories$n_stories_round %>%
+  as.character()
+
+# Put all users with more than 10 stories watched in the first session in the same bin
+new_users_compo_frst_month_stories$n_stories_char[new_users_compo_frst_month_stories$n_stories_char == "10"] = "10+"
+
+# count the number of users who have the same average number stories read in first week
+avg_num_stories_count <- new_users_compo_frst_month_stories %>%
+  group_by(n_stories_char) %>%
+  summarize(n_stories_round = n()) %>%
+  arrange(n_stories_char)
+
+# Add a column to help set the order of the bars in the bar plot below (x=reorder(...))
+avg_num_stories_count$plot_order = c(1, 10, 2, 3, 4, 5, 6, 7, 8, 9) 
+
+# Plot the average number of stories viewed in the first week by user count
+ggplot(avg_num_stories_count,
+       aes(x=reorder(n_stories_char,plot_order),y=n_stories_round)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Average Number of Stories per Daily Session in the First Month") +
+  ylab("New User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+```{r first_month_avg_stories_weekly}
+
+
+# Average number of stories per user in first two week since signup
+new_users_compo_frst_month_stories_w <- new_users_frst_month_compo %>%
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  summarize(n_stories = n()) %>%
+  group_by(child_id) %>%
+  summarize(n_stories = mean(n_stories)) 
+
+# Put all users with more than 10 stories watched in the same bin
+new_users_compo_frst_month_stories_w$n_stories[new_users_compo_frst_month_stories_w$n_stories > 10] = 10
+
+# create a column for number of stories where number of stories is rounded to the nearest digit
+# and convert to string. This will help in adding the label 20+ to the bar_graph.
+new_users_compo_frst_month_stories_w$n_stories_round = new_users_compo_frst_month_stories_w$n_stories %>%
+  round(0)
+new_users_compo_frst_month_stories_w$n_stories_char = new_users_compo_frst_month_stories_w$n_stories_round %>%
+  as.character()
+
+# Put all users with more than 10 stories watched in the first session in the same bin
+new_users_compo_frst_month_stories_w$n_stories_char[new_users_compo_frst_month_stories_w$n_stories_char == "10"] = "10+"
+
+# count the number of users who have the same average number stories read in first week
+avg_num_stories_count <- new_users_compo_frst_month_stories_w %>%
+  group_by(n_stories_char) %>%
+  summarize(n_stories_round = n()) %>%
+  arrange(n_stories_char)
+
+# Add a column to help set the order of the bars in the bar plot below (x=reorder(...))
+avg_num_stories_count$plot_order = c(1, 10, 2, 3, 4, 5, 6, 7, 8, 9) 
+
+# Plot the average number of stories viewed in the first week by user count
+ggplot(avg_num_stories_count,
+       aes(x=reorder(n_stories_char,plot_order),y=n_stories_round)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Average Number of Stories per Weekly Session in the First Month") +
+  ylab("New User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
 
 **Exercise**
 *Choose one of the above initial time periods and repeat the analysis separately for B2B and B2C users. Evaluate whether B2B use the app differently during the initial time period compared to B2C users.*
