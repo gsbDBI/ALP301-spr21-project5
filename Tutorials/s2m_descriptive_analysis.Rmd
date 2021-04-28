@@ -698,7 +698,7 @@ Each bar in the graph shows the number of users who viewed its respective number
 ```{r first_day_story_count_filtered}
 
 # Variable to adjust to check for activity a certain number of days after sign-up
-active_user_day <- 7
+active_user_day <- 21
 
 # Filter out users who have no activity a week out
 users_active_after_first_week <- filtered_logged_df %>%
