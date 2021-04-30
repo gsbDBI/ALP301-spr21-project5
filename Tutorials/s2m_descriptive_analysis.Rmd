@@ -524,6 +524,63 @@ The cutoff that defines short- versus long-term is somewhat arbitrary. For examp
 **Exercise**
 *Choose a different definition of a long-term user and replicate the figure above. Don't forget to redefine your sample to ensure you can identify whether users are short- or long-term with the available data.*
 
+```{r filter_users_before_may_2}
+
+# Select users who created their account after Sep. 30, 2020
+post_oct_users <- filtered_child_df %>%
+  dplyr::filter(created_at > "2020-09-30") %>%
+  pull(child_id)
+
+# Sanity check: number of user-story interactions before filtering users
+paste0("Number of user-story interactions before filtering users who signed up after Oct. 2020: ", dim(filtered_logged_df)[1])
+
+# Filter out users who created their account after Oct. 1, 2020
+filtered_logged_df_may_oct <- filtered_logged_df %>%
+  dplyr::filter(!(child_id %in% post_oct_users))
+
+filtered_child_df_may_oct <- filtered_child_df %>% 
+  dplyr::filter(!(child_id %in% post_oct_users))
+
+# Sanity check: number of user-story interactions after filtering users
+paste0("Number of user-story interactions after filtering users who signed up after Oct. 2020: ", dim(filtered_logged_df_may_oct)[1])
+
+```
+
+Now on to the graphs: we consider the tenure of users by comparing the number of short-term vs. long-term users in the figure below.
+
+```{r get_user_tenure_2}
+
+# Get the number of days each users has been on the app
+user_max_usage_sessions <- filtered_logged_df_may_oct %>%
+  select(days_since_signup, child_id) %>%
+  group_by(child_id) %>%
+  summarize(max_days_since_signup = max(days_since_signup))
+
+# Get ids of short-term daily users
+short_term_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup < 120) %>%
+  pull(child_id)
+
+# Get ids of experienced/tenured daily users
+tenured_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup >= 120) %>%
+  pull(child_id)
+
+# Create a dataframe with number of users and user type for plotting
+user_type_df <- data.frame(num_users = c(length(short_term_users),
+                                length(tenured_users)),
+                  user_type = c("Short-term","Long-term"))
+
+ggplot(user_type_df, aes(x = user_type, y = num_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("User Tenure Type") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
 
 # Basic Facts on New Users
 
@@ -1245,6 +1302,142 @@ ggplot(avg_num_stories_count,
 **Exercise**
 *Choose one of the above initial time periods and repeat the analysis separately for B2B and B2C users. Evaluate whether B2B use the app differently during the initial time period compared to B2C users.*
 
+We will do the analysis for a time period of two weeks
+
+```{r first_two_weeks_story_type_get_user}
+
+# Separate counts of B2B vs. B2C users
+new_users_frst_two_weeks_compo_B2B <- new_users_frst_two_weeks_compo %>%
+  dplyr::filter(user == 'b2b')
+
+new_users_frst_two_weeks_compo_B2C <- new_users_frst_two_weeks_compo %>%
+  dplyr::filter(user == 'b2c')
+```
+
+Analysis for B2B 
+
+```{r first_two_weeks_story_type_B2B}
+# Get most popular type of story for all new users 
+new_users_frst_two_week_compo_story_types_B2B <- new_users_frst_two_weeks_compo_B2B %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get the top 6 story types
+top_six_stories_B2B <- new_users_frst_two_week_compo_story_types_B2B %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+num_other_stories_B2B <- new_users_frst_two_week_compo_story_types_B2B %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_stories_B2B$story_type)) %>%
+  select(num_users) %>% sum()
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_stories_B2B <- top_six_stories_B2B %>% 
+  add_row(story_type = "Other", 
+          num_users = num_other_stories_B2B)
+
+# Plot the most popular story types by user count
+ggplot(top_six_stories_B2B,
+       aes(fct_reorder(story_type, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Viewed Story Types in First Two Weeks (B2B)") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+```{r first_two_weeks_app_feature_type_B2B}
+# Get most popular type of app feature for all new users 
+new_users_frst_two_week_compo_app_feature_types_B2B <- new_users_frst_two_weeks_compo_B2B %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(mode = mlv(source_page_id, method='mfv')) %>%
+  group_by(mode) %>%
+  summarize(num_users = n())
+
+# Plot the most popular story types by user count
+ggplot(new_users_frst_two_week_compo_app_feature_types_B2B %>% 
+         arrange(desc(num_users)),
+       aes(fct_reorder(mode, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Used App Section to View Stories in First Two Weeks (B2B") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+Analysis for B2C
+ 
+```{r first_two_weeks_story_type_B2C}
+# Get most popular type of story for all new users 
+new_users_frst_two_week_compo_story_types_B2C <- new_users_frst_two_weeks_compo_B2C %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get the top 6 story types
+top_six_stories_B2C <- new_users_frst_two_week_compo_story_types_B2C %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+num_other_stories_B2C <- new_users_frst_two_week_compo_story_types_B2C %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_stories_B2C$story_type)) %>%
+  select(num_users) %>% sum()
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_stories_B2C <- top_six_stories_B2C %>% 
+  add_row(story_type = "Other", 
+          num_users = num_other_stories_B2C)
+
+# Plot the most popular story types by user count
+ggplot(top_six_stories_B2C,
+       aes(fct_reorder(story_type, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Viewed Story Types in First Two Weeks (B2C)") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+```{r first_two_weeks_app_feature_type_B2C}
+# Get most popular type of app feature for all new users 
+new_users_frst_two_week_compo_app_feature_types_B2C <- new_users_frst_two_weeks_compo_B2C %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(mode = mlv(source_page_id, method='mfv')) %>%
+  group_by(mode) %>%
+  summarize(num_users = n())
+
+# Plot the most popular story types by user count
+ggplot(new_users_frst_two_week_compo_app_feature_types_B2C %>% 
+         arrange(desc(num_users)),
+       aes(fct_reorder(mode, num_users),num_users)) +
+  geom_bar(stat = 'identity', fill='darkblue') +
+  xlab("Most Frequently Used App Section to View Stories in First Two Weeks (B2C") +
+  ylab("User Count") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
 # Short-Term v. Long-Term Users
 
 In this last section of this first tutorial, we compare the characteristics of short- and long-term users. This analysis is the first step of a more in-depth analysis of user tenure in the second tutorial aimed at understanding what keeps users returning to the app. Note that, because we cannot determine whether users who sign up in November 2020 or later are short- or long-term users, we restrict the sample to users who sign up prior to November 2020.
@@ -1885,3 +2078,203 @@ Each pair of bars in the graph shows the number of short/long-term users who mos
 
 **Exercise**
 *Repeat the above analysis for either short/long-term users' first week or first month of usage. Don't forget to restrict the sample to the appropriate users.*
+
+
+### First Month
+
+```{r short_long_term_users_first_month_story_counts}
+tenured_users_compo_first_month_stories <- tenured_users_compo %>% 
+  dplyr::filter(days_since_signup < 30) %>%
+  group_by(child_id) %>%
+  summarize(n_stories_viewed = n_distinct(view_id)) %>%
+  group_by(n_stories_viewed) %>%
+  summarize(n_users = n())
+  
+# Put tenured users with more than 20 stories watched in the first session in the same bin
+tenured_users_compo_first_month_stories$n_stories_viewed[tenured_users_compo_first_month_stories$n_stories_viewed> 20] <- 20 
+
+# Add a tenure user.type column which will serve as a label when plotting graphs
+tenured_users_compo_first_month_stories$user.type <- 'Long-term'
+
+short_term_users_compo_first_month_stories <- short_term_users_compo %>% 
+  dplyr::filter(days_since_signup < 14) %>%
+  group_by(child_id) %>%
+  summarize(n_stories_viewed = n_distinct(view_id)) %>%
+  group_by(n_stories_viewed) %>%
+  summarize(n_users = n())
+
+# Put short-term users with more than 20 stories watched in the first session in the same bin
+short_term_users_compo_first_month_stories$n_stories_viewed[short_term_users_compo_first_month_stories$n_stories_viewed >20 ] <- 20 
+
+# Add a short_term user.type column which will serve as a label when plotting graphs
+short_term_users_compo_first_month_stories$user.type <- 'Short-term'
+
+# Compute proportion of short- and long-term users by number of stories watched in first daily session
+tenured_users_compo_first_month_stories$prop <- tenured_users_compo_first_month_stories$n_users / sum(tenured_users_compo_first_month_stories$n_users)
+
+short_term_users_compo_first_month_stories$prop <- short_term_users_compo_first_month_stories$n_users / sum(short_term_users_compo_first_month_stories$n_users)
+
+# Combine the two dataframes for easier plotting
+all_users_compo_first_month_stories <- rbind(tenured_users_compo_first_month_stories,
+                                       short_term_users_compo_first_month_stories)
+
+# Plot proportion of short- and long-term users by signup date
+ggplot(data = all_users_compo_first_month_stories,
+       aes(x = n_stories_viewed, y = prop, fill = user.type)) + 
+  geom_bar(stat="identity", position=position_dodge()) + 
+  scale_x_continuous(limits = c(0.5,20.5),
+                     breaks=seq(1, 20)) +
+  xlab("Average Number of Stories Viewed per Day in First Month, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+```{r short_long_first_month_story_type}
+# Get most popular type of story for tenured users in their first month of using the app
+tenured_users_frst_month_compo_story_types <- tenured_users_compo %>%
+  dplyr::filter(days_since_signup < 30) %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get proportion of each story type
+tenured_users_frst_month_compo_story_types$prop = (tenured_users_frst_month_compo_story_types$num_users /
+                                                      sum(tenured_users_frst_month_compo_story_types$num_users))
+
+# add a tenured user_type column for easier plotting
+tenured_users_frst_month_compo_story_types$user_type <- 'Long-term'
+
+# get the top 6 story types
+top_six_story_types_tenured <- tenured_users_frst_month_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+other_story_types_tenured <- tenured_users_frst_month_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_story_types_tenured$story_type)) %>%
+  select(num_users,prop) %>% 
+  summarize(num_users = sum(num_users),
+            prop =sum(prop))
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_story_types_tenured <- top_six_story_types_tenured %>% 
+  add_row(story_type = "Other", 
+          num_users = other_story_types_tenured$num_users,
+          prop = other_story_types_tenured$prop,
+          user_type = "Long-term")
+
+# Get most popular type of story for short-term users in their first month of using the app
+short_term_users_frst_month_compo_story_types <- short_term_users_compo %>%
+  dplyr::filter(days_since_signup < 30) %>%
+  select(child_id, section_id) %>%
+  group_by(child_id) %>%
+  summarize(story_type = mlv(section_id, method='mfv')) %>%
+  group_by(story_type) %>%
+  summarize(num_users = n())
+
+# get proportion of each story type
+short_term_users_frst_month_compo_story_types$prop = (short_term_users_frst_month_compo_story_types$num_users /
+                                                         sum(short_term_users_frst_month_compo_story_types$num_users))
+
+# add a short_term user_type column for easier plotting
+short_term_users_frst_month_compo_story_types$user_type <- 'Short-term'
+
+# get the top 6 story types
+top_six_story_types_short_term <- short_term_users_frst_month_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  head(6)
+
+# get the sum of all other story types
+other_story_types_short_term <- short_term_users_frst_month_compo_story_types %>% 
+  arrange(desc(num_users)) %>%
+  dplyr::filter(!(story_type %in% top_six_story_types_short_term$story_type)) %>%
+  select(num_users,prop) %>% 
+  summarize(num_users = sum(num_users),
+            prop =sum(prop))
+
+# add row to df with top 6 story types with the nymber of "other" story types  
+top_six_story_types_short_term <- top_six_story_types_short_term %>% 
+  add_row(story_type = "Other", 
+          num_users = other_story_types_short_term$num_users,
+          prop = other_story_types_short_term$prop,
+          user_type = "Short-term")
+
+# combine the two dataframes together for easier plotting
+top_six_story_types_all <- rbind(top_six_story_types_short_term,
+                                 top_six_story_types_tenured)
+
+# Plot proportion of short- and long-term users by story type
+ggplot(data = top_six_story_types_all,
+       aes(fct_reorder(story_type, prop),prop)) + 
+  geom_bar(stat="identity", 
+           aes(fill = user_type),
+           position=position_dodge()) +
+  xlab("Most Frequently Viewed Story Types in First Month, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+```{r short_long_term_users_first_month_app_feature_type}
+# Get most popular type of app feature for tenured users in their first month of using the app
+tenured_users_month_compo_source_types <- tenured_users_compo %>%
+  dplyr::filter(days_since_signup < 30) %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(source_type = mlv(source_page_id, method='mfv')) %>%
+  group_by(source_type) %>%
+  summarize(num_users = n())
+
+# Get proportion of each app feature type used in the first month in the app for tenured users
+tenured_users_month_compo_source_types$prop = (tenured_users_month_compo_source_types$num_users /
+                                                sum(tenured_users_month_compo_source_types$num_users))
+
+# Add a tenured user_type column for easier plotting
+tenured_users_month_compo_source_types$user_type <- 'Long-term'
+
+# Get most popular type of app feature for short-term users in their first month of using the app
+short_term_users_month_compo_source_types <- short_term_users_compo %>%
+  dplyr::filter(days_since_signup < 14) %>%
+  select(child_id, source_page_id) %>%
+  group_by(child_id) %>%
+  summarize(source_type = mlv(source_page_id, method='mfv')) %>%
+  group_by(source_type) %>%
+  summarize(num_users = n())
+
+# Get proportion of each app feature type used in the first month session for short-term users
+short_term_users_month_compo_source_types$prop = (short_term_users_month_compo_source_types$num_users /
+                                                sum(short_term_users_month_compo_source_types$num_users))
+
+# Add a short_term user_type column for easier plotting
+short_term_users_month_compo_source_types$user_type <- 'Short-term'
+
+# Combine the two dataframes together for easier plotting
+all_users_month_compo_source_types <- rbind(short_term_users_month_compo_source_types,
+                                 tenured_users_month_compo_source_types)
+
+# Plot proportion of short- and long-term users by app feature type
+ggplot(data = all_users_month_compo_source_types,
+       aes(fct_reorder(source_type, prop),prop)) + 
+  geom_bar(stat="identity", 
+           aes(fill = user_type),
+           position=position_dodge()) +
+  xlab("Most Frequently Used App Section to View Stories in First Month, by User Tenure") +
+  ylab("Proportion of Users") +
+  labs(fill = "User Type") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
+
