@@ -5,9 +5,6 @@ title: 'Stones2Milestones Path Analysis Project: Understanding the Users and the
 author: "Muhammad Ahmed Chaudhry, Jorge Cordero, Manali Kulkarni, Stone Ng"
 date: "April 2021"
 output:
-  pdf_document:
-    toc: yes
-    toc_depth: '2'
   html_document:
     code_folding: hide
     highlight: haddock
@@ -16,6 +13,9 @@ output:
     toc: yes
     toc_depth: 2
     toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
 ---
 
 # Tutorial Overview
