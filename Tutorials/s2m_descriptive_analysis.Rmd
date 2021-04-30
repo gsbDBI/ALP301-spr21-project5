@@ -2,7 +2,7 @@
 ---
 title: 'Stones2Milestones Path Analysis Project: Understanding the Users and their
   Interactions with the App '
-author: "Muhammad Ahmed Chaudhry, Manali Kulkarni"
+author: "Muhammad Ahmed Chaudhry, Jorge Cordero, Manali Kulkarni, Stone Ng"
 date: "April 2021"
 output:
   pdf_document:
