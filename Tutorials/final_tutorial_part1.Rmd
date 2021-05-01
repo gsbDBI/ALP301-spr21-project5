@@ -238,6 +238,10 @@ filtered_logged_df_may_nov <- left_join(x = filtered_logged_df_may_nov, y = user
 
 filtered_logged_df_may_nov$tenure_type <- ifelse(filtered_logged_df_may_nov$max_days_since_signup>=90, "Long-Term", "Short-Term")
 
+# Save the filtered dataframe to be used in the next tutorial 
+write.csv(filtered_child_df,'filtered_child_df.csv')
+write.csv(filtered_logged_df,'filtered_logged_df.csv')
+
 ```
 
 # When does the app lose users? And what kinds of users is the app more/less likely to lose?
