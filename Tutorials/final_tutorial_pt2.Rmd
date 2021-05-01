@@ -1,0 +1,1674 @@
+---
+title: 'Stones2Milestones Path Analysis Project: Answering Business Questions with Data'
+author: "YOUR NAME"
+date: "April 2021"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    number_sections: no
+    theme: journal
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+ # results = 'hide'
+)
+```
+
+# Tutorial Overview
+
+This tutorial is the second part of the second tutorial aimed to equip you with additional tools and techniques to advance your analysis for the Stones 2 Milestones (S2M) path analysis project. While the previous tutorials focus on understanding basic facts about the users as well as their behavior patterns on the app, this tutorial focuses on transitioning from performing purely descriptive analysis to building predictive machine learning models and furthering the previous tutorial's cohort analysis using machine learning techniques. In addition, this tutorial shows you how to formulate business-relevant questions that can be answered by utilizing the appropriate machine learning approach(es). We focus on two broad questions in this tutorial:
+
+1. Can we get meaningful insights about user cohorts by creating these cohorts using a combination of multiple user characteristics?
+2. Can we predict a user's long-term engagement with the app based on their initial fixed and behavioral characteristics?
+
+Each section of this tutorial approaches one of these questions. We first discuss the relevance of the question, then how we approach answering this question. As you read this tutorial, consider how else you might approach answering these questions as well as what other business-relevant questions you might answer with these approaches.
+
+# Preliminaries
+
+First, we repeat some of the preliminaries from the previous tutorials. We load the necessary packages, then load the processed datasets. The processed datasets include the filtered user-level data and filtered user-story interactions data. Please refer to the *Preliminaries* section in the first part of the second tutorial where we save these processed datasets (using the `write.csv` function) in order to understand which filters are applied to the dataframes before saving them as csv files.
+
+```{r load_tidyverse}
+# Ensure that pacman is installed for package management and loading.
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse) # for data reading wrangling and visualization
+
+```
+
+```{r load_packages}
+# for enabling dataframe manipulation (0.8.0.1)
+pacman::p_load(dplyr) 
+# for simple interface for OLS estimation w/ robust std errors ()
+pacman::p_load(estimatr)
+# for summary statistics (3042.89)
+pacman::p_load(fBasics)
+# for data visualization
+pacman::p_load(ggplot2)
+# for easily highlighting lines and points in a ggplot 
+pacman::p_load(gghighlight) 
+# for working with "grid" graphics
+pacman::p_load(gridExtra)
+# for providing a prettier RMarkdown (1.0.1)
+pacman::p_load(kableExtra)
+# for providing a general-purpose tool for dynamic report generation  (1.21)
+pacman::p_load(knitr)
+# for dealing with date-type data 
+pacman::p_load(lubridate)
+# for computing the mode of a vector
+pacman::p_load(modeest)
+# for reading csv files (1.3.1)
+pacman::p_load(readr)
+# for modeling, transforming, and visualizing data  (0.8.0.1)
+pacman::p_load(tidyverse)
+# for modern alternative to data frames (2.1.1)
+pacman::p_load(tibble)
+# for simplifying the process of creating tidy data
+pacman::p_load(tidyr)
+# for internal scaling of graph labels and text 
+pacman::p_load(scales)
+# for cross-validating glm models
+pacman::p_load(boot)
+# for streamlining the model training process 
+pacman::p_load(caret)
+# for enabling fast implementation of random forests 
+pacman::p_load(randomForest)
+# for clustering algorithms
+pacman::p_load(cluster)
+# for clustering algorithms & visualization
+pacman::p_load(factoextra)
+# for storing data as tables, data frames, or list objects
+pacman::p_load(data.table)
+# for cross-validating regressions
+pacman::p_load(cvms)
+# for progress bars
+pacman::p_load(plyr)
+# for building regression models 
+pacman::p_load(glmnet)
+# for variance estimations
+pacman::p_load(plm)
+# for testing linear models
+pacman::p_load(lmtest)
+# for summarizing data
+pacman::p_load(ggiraphExtra)
+```
+
+```{r load_processed_data}
+# Load the filtered user-level data stored as a CSV file 
+filtered_child_df <- read.csv(file='filtered_child_df.csv')
+
+# Load the filtered dataframe from the cohort analysis tutorial
+filtered_logged_df <- read.csv(file='filtered_logged_df.csv')
+```
+
+# Performing cohort analysis on user cohorts created using ML clustering techniques 
+We will use a machine learning clustering technique known as k-means clustering to divide users into groups based on their behavioral characteristics (also known as user segmentation). This technique will help us to identify patterns in app usage behavior across different user groups.
+
+Clustering is a set of techniques used for finding subgroups of observations within a data set. It falls into the unsupervised machine learning category because it seeks to find relationships between observations without using a dependent variable `y` to train on. K-means clustering is the simplest and most commonly used clustering technique that splits a datasets into k clusters based on a specified set of observation characteristics.
+
+## Feature engineering for clustering analysis
+In order to perform clustering analysis, we transform the raw data into features that better represent the underlying problem to our model. This transformation is known as feature engineering and is a very important step of building robust machine learning models. When done properly, it can significantly improve model performance.
+
+We start by building features based on users' initial behavioral characteristics. These user characteristics are similar to the ones you have already analyzed in the previous tutorials.
+
+### Features related to the users' behavioral characteristics
+We create the following features for the users' first week on the app: 
+
+* Total number of stories in the first weekly session
+* Average number of stories per daily session in the first week 
+* Number of unique daily sessions in the first week 
+* Number of unique stories viewed in the first week 
+* Number of unique app features used in the first week 
+
+We will create the same set of features for the first two and first three weeks on the app as well.
+
+```{r first_wk_feature_engineering_clustering}
+# total number of stories in first weekly session
+tot_num_stories_firstwkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, sessions_since_signup, story_id)%>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_firstwkly_session = n()) 
+
+# average number of stories per daily session in first week 
+avg_num_stories_daily_session_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_firstwk = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_firstwk = mean(n_stories_firstwk)) 
+
+clustering_features_df <- left_join(x = tot_num_stories_firstwkly_session, y = avg_num_stories_daily_session_firstwk %>%
+                        select(child_id, avg_n_stories_firstwk), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first week 
+num_daily_sessions_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_firstwk = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_firstwk %>%
+                        select(child_id, n_sessions_firstwk), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first week 
+num_unique_stories_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_firstwk = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_firstwk %>%
+                        select(child_id, unique_stories_firstwk), 
+                      by = 'child_id')
+
+# number of unique app features used in first week 
+num_unique_sources_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_firstwk = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_firstwk %>%
+                        select(child_id, unique_sources_firstwk), 
+                      by = 'child_id')
+
+```
+
+```{r first_2wks_feature_engineering_clustering}
+# total number of stories in first two weekly sessions
+tot_num_stories_first2wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first2wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first2wkly_session %>%
+                        select(child_id, n_stories_first2wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first two weekly sessions
+tot_num_stories_first2wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first2wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first2wkly_sessions = mean(n_stories_first2wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first2wkly_session %>%
+                        select(child_id, avg_n_stories_first2wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first two weeks
+avg_num_stories_daily_session_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first2wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first2wks = mean(n_stories_first2wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first2wks %>%
+                        select(child_id, avg_n_stories_first2wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first two weeks
+num_daily_sessions_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first2wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first2wks %>%
+                        select(child_id, n_sessions_first2wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first two weeks
+num_unique_stories_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first2wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first2wks %>%
+                        select(child_id, unique_stories_first2wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first two weeks
+num_unique_sources_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first2wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first2wks %>%
+                        select(child_id, unique_sources_first2wks), 
+                      by = 'child_id')
+```
+
+```{r first_3wks_feature_engineering_clustering}
+# total number of stories in first three weekly sessions
+tot_num_stories_first3wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first3wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first3wkly_session %>%
+                        select(child_id, n_stories_first3wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first three weekly sessions
+tot_num_stories_first3wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first3wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first3wkly_sessions = mean(n_stories_first3wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first3wkly_session %>%
+                        select(child_id, avg_n_stories_first3wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first three weeks
+avg_num_stories_daily_session_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first3wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first3wks = mean(n_stories_first3wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first3wks %>%
+                        select(child_id, avg_n_stories_first3wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first three weeks
+num_daily_sessions_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first3wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first3wks %>%
+                        select(child_id, n_sessions_first3wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first three weeks
+num_unique_stories_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first3wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first3wks %>%
+                        select(child_id, unique_stories_first3wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 3 weeks
+num_unique_sources_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first3wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first3wks %>%
+                        select(child_id, unique_sources_first3wks), 
+                      by = 'child_id')
+
+clustering_features_df <- clustering_features_df %>% select(-c(sessions_since_signup))
+```
+
+## Preprocessing the data for clustering analysis
+Before we continue with the clustering analysis, we have to ensure that the data is preprocessed properly by: 
+
+* Checking that each row of our dataframe is an observation (or individual) and each column is a feature.
+* Ensuring that none of the rows corresponding to features used for clustering have missing values. 
+* Standardizing the features to ensure that the comparisons between different features are valid. Note that when we "standardize" the data, we ensure each feature has a mean of 0 and a standard deviation of 1.
+
+```{r preprocess_clustering_data}
+# Print a random row to ensure it is an observation and that each corresp. column of that row is a feature
+print(clustering_features_df[15, ])
+
+# Ensure we removed all missing values from the data
+print(sum(is.na(clustering_features_df)))
+
+# Standardize the features used for clustering -- ensure child_id is not preprocessed
+clustering_df <- clustering_features_df %>% ungroup()
+vars<-clustering_df %>% select(-c(child_id))
+vars<-c(colnames(vars))
+pre_proc_val <- preProcess(clustering_df[,vars], method = c("center", "scale"))
+clustering_df[,vars] = predict(pre_proc_val, clustering_df[,vars])
+rownames(clustering_df) <- clustering_df$child_id
+clustering_df$child_id <- NULL 
+```
+
+## Performing k-means clustering
+To split users into subgroups, we use k-means clustering, which is the most commonly used clustering technique for partitioning a dataset into a set of k clusters where k (the number of clusters) is pre-determined by the data scientist.
+
+The way k-means clusters observations into groups is by maximizing the similarity between observations within the same cluster (i.e. high intra-cluster similarity) while minimizing the similarity between observations from different clusters (i.e. low inter-cluster similarity). 
+
+In addition, the reason we call this technique "k-means" clustering is because it represents each cluster by a center (i.e. centroid) that is computed as the mean of the points assigned to that cluster. To assign an observation $x_i$ to a cluster, the algorithm computes the Euclidean distance between the observation's features and the cluster mean in order to determine which cluster's centroid is closest to $x_i$ and assign $x_i$ to the closest cluster accordingly.
+
+We randomly pick k to be 4 (i.e. `centers`= 4) and, consequently, partition the users into four clusters based on their initial behavioral characteristics on the app.
+
+We begin by partitioning the users into four clusters (`centers`= 4) based on the users' initial behavioral characteristics on the app. We also set `nstart` equal to 25 so that the k-means function randomly generates 25 initial configurations and chooses the best one. In our case, k-means will repeat the process of randomly picking 4 centroids (i.e. observations) to initialize the 4 clusters 25 times. By setting `nstart=25`, we try to optimize the process of initializing clusters, so that the k-means model becomes stable. For example, if the algorithm randomly picks observations that are outliers as the initial centroids then the clustering will not be stable. When the clustering is not stable, the algorithm might end up assigning observations to different clusters each time the clusters are reinitialized.
+
+```{r k4_means_users}
+set.seed(1234)
+
+# Perform k-means clustering with k=4
+k4 <- kmeans(clustering_df, centers = 4, nstart = 25)
+str(k4)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+fviz_cluster(k4, clustering_df)
+``` 
+
+The plot above enables us to visualize the assignment of clusters for all data points after performing principal component analysis (PCA). PCA allows us to reduce the dimensionality of the data since we have more than two features (i.e. dimensions) in our data. The axes in the plot correspond to the first two principal components that explain the majority of the variance in our data. 
+
+We then run k-means with k=5 and k=3, in addition to k=4, to compare the results of this clustering algorithm with varying k values.
+```{r k5_means_users}
+# Perform k-means clustering with k=5
+k5 <- kmeans(clustering_df, centers = 5, nstart = 25)
+str(k5)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+fviz_cluster(k5, clustering_df)
+``` 
+
+```{r k3_means_users}
+# Perform k-means clustering with k=3
+k3 <- kmeans(clustering_df, centers = 3, nstart = 25)
+str(k3)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+fviz_cluster(k3, clustering_df)
+``` 
+
+As can be observed from the results and plots of the k-means clustering with k=3, k=4, and k=5, the cluster with the highest values for both principal components (denoted as Dim1 and Dim2 in the plots) is the one that has a significantly lower number of users compared to other clusters. Similarly, the cluster that has the second-to-highest values for both principal components is the one that has a much smaller number of users compared to the clusters with lower values for both PCs. Intuitively, this makes sense because overall, in our dataset, there are significantly fewer users in the highest quartile of user engagement. 
+
+Another interesting observation is that as we increase the number of clusters (i.e. k=5), more clusters form around the lower values of principal components rather than the higher values. This increased refinement of user subgroups at the lower values could lead to some interesting cohort analysis for those clusters.
+
+## Determining optimal cluster size for k-means clustering
+Given that the k-means clustering algorithm allows us to specify the number of clusters generated, we can also use various methods for determining the optimal number of clusters. The three most popular methods are: the elbow method, the silhouette method, and gap statistic. We will be implementing the average silhouette method (described below), but you should feel free to implement whichever method you like. For more details on the elbow method, see [here](https://en.wikipedia.org/wiki/Elbow_method_(clustering)), and on the gap statistic, see [here](https://web.stanford.edu/~hastie/Papers/gap.pdf).
+
+It is also important to note that in practice, the data-driven approach for determining the number of clusters is not usually strictly followed, but it gives a starting point.
+
+### Silhouette method
+The silhouette method measures the quality of a clustering by determining how well each observation lies within its assigned cluster. First, it computes the silhouette coefficient of each data point, which measures how much a point is similar to its own cluster (cohesion) compared to other clusters (separation). Then, it averages out the silhouette coefficient for all data points to obtain the silhouette score. 
+
+More specifically, the silhouette coefficient is calculated using the mean intra-cluster distance ($d_{intra}$) and the mean nearest-cluster distance ($d_{nearest\_cluster}$) for each sample. The silhouette coefficient for a sample is ($d_{nearest\_cluster}-d_{intra}) / max(d_{intra}, d_{nearest\_cluster})$ where $d_{nearest\_cluster}$ is the distance between a data point and the nearest cluster that the point is not a part of. 
+
+The silhouette score ranges between [-1, 1]. A high value is desirable because it implies that the data point is very similar to the other points in its cluster and not similar to the points in other clusters. On the other hand, a low silhouette score implies that the clustering configuration has to be changed (i.e. data points have to be reassigned to new clusters) as there could be too few or too many clusters in the current configuration.
+
+We now plot the silhouette score to better understand how the observations are grouped into k clusters. 
+
+```{r silhouette_score}
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
+sil_score <- function(k) {
+  km.res <- kmeans(clustering_df, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(clustering_df))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 10
+k.values <- 2:10
+
+# extract silhouette scores for 2-10 clusters
+sil_values <- map_dbl(k.values, sil_score)
+
+plot(k.values, sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters k",
+       ylab = "Silhouette Score")
+```
+
+Thus, as can be seen from the silhouette plot above, the k with the highest silhouette score is 2 and the k with the second highest silhouette score is 3. We can also see that, in general, the silhouette score decreases as the number of clusters increases.
+
+```{r silhouette_score_opt_clusters}
+fviz_nbclust(clustering_df, kmeans, method = "silhouette")
+```
+
+### Exercise
+
+**Change the input features (i.e. input variables) used to build the k-means clustering model and investigate the new clusters. How do these clusters differ from the ones we have obtained from the k-means model above?**
+
+**In addition, vary the number of clusters generated by changing the k parameters in the k-means model. Observing the user clusters obtained using different k values, are there are any interesting patterns or results?** 
+
+## Analyzing the features of user clusters
+Even though the k-means model with `k=2` gives the highest silhouette score, we use the clusters from the k-means models with `k=3` and `k=4` to generate user subgroups because having 3 or 4 user clusters could lead to more interesting insights into user subgroups' behavior on the app.
+
+### Estimating the average covariate values for user clusters 
+We begin by estimating the average covariate (i.e. feature) value for each user cluster. This allows us to analyze what differentiates users who are assigned to different clusters. We also compare the average of the covariates used for clustering across different k-means clusters with the average of the same covariates across user groups obtained by manually splitting users into 3 groups based on their tenure on the app. This comparison allows us to understand how the k-means clusters compare against a different type of user subgroups we have already analyzed.
+
+Thus, we perform 3 different types of user subgroup analysis and comparisons:
+
+1. Analyze and compare the characteristics of **user subgroups obtained by different clustering methods**. (I.e. we vary the number of clusters generated by k-means clustering from 3 to 4 and observe the changes in user clusters.)
+2. Analyze and compare the characteristics of **user subgroups obtained by the same clustering method**. (I.e. using the same k-means model where `k=3`, we compare the users assigned to Cluster 1 with users assigned to Cluster 3.)
+3. Analyze and compare the characteristics of **user subgroups created using different user characteristics**. (I.e. we compare the user subgroups created based on only the user's tenure on the app with user subgroups created by k-means models built based on various initial behavioral characteristics like average number of daily sessions in the first three weeks, average number of stories viewed per daily session in the first week, etc.)
+
+First, we define the user subgroups. Then we define the `plot_covariate_means_by_ntile` function and use it to estimate the average covariate value for each user subgroup.
+
+```{r create_user_subgroups}
+# Perform k-means clustering with k=3
+k3 <- kmeans(clustering_df, centers = 3, nstart = 25)
+# Add the k-means model label to each row corresp. to a user id
+clustering_features_df <- clustering_features_df %>%
+  ungroup() %>%
+  mutate(k3_cluster = k3$cluster) 
+
+# Perform k-means clustering with k=4
+k4 <- kmeans(clustering_df, centers = 4, nstart = 25)
+# Add the k-means model label to each row corresp. to a user id
+clustering_features_df <- clustering_features_df %>%
+  ungroup() %>%
+  mutate(k4_cluster = k4$cluster) 
+
+# Get the highest number of days each users has been on the app
+user_max_usage_sessions <- filtered_logged_df %>%
+  select(days_since_signup, child_id) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(max_days_since_signup = max(days_since_signup))
+# Join the users' maximum days on the app and tenure type with the clustering features dataframe
+clustering_joined_df <- left_join(x = clustering_features_df, y = user_max_usage_sessions %>%
+                         select(child_id, max_days_since_signup), 
+                      by = 'child_id')
+# Add the tenure type to each row corresp. to a user id
+clustering_joined_df$tenure_type <- ifelse(clustering_joined_df$max_days_since_signup<90, "Short-Term",
+                                         ifelse(clustering_joined_df$max_days_since_signup>=90 &
+                                                  clustering_joined_df$max_days_since_signup<180, "Medium-Term",
+                                                "Long-Term"))
+
+
+```
+
+```{r def_plot_covariate_means_by_ntile}
+
+# Table of covariates means/sd by n.tile. The n.tile is the variable that 
+# defines the subgroups here, which needs to be done before running the function.
+plot_covariate_means_by_ntile <- function(.df, .ntile = "ntile", covariate_names, n_top = 10, title_label) {
+  .df <- as.data.frame(.df)
+  covariate_names <- covariate_names
+  .df[, .ntile] <- as.factor(.df[, .ntile])
+
+  # Regress each covariate on ntile/subgroup assignment to means p
+  cov_means <- lapply(covariate_names, function(covariate) {
+    lm_robust(as.formula(paste0(covariate, " ~ 0 + ", .ntile)), data = .df, se_type = "stata")
+  })
+
+  # Extract the mean and standard deviation of each covariate per ntile/subgroup
+  cov_table <- lapply(cov_means, function(cov_mean) {
+    means <- as.data.frame(t(coef(summary(cov_mean))[,c("Estimate", "Std. Error")]))
+    means
+  })
+  
+  # Preparation to color the chart
+  temp_standardized <- sapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    .standardized
+  })
+  
+  colnames(temp_standardized) <- covariate_names
+  ordering <- order(apply(temp_standardized, MARGIN = 2, function(x) {.range <- range(x); abs(.range[2] - .range[1])}), decreasing = TRUE)
+  
+  color_scale <- max(abs(c(max(temp_standardized, na.rm = TRUE), min(temp_standardized, na.rm = TRUE))))
+  color_scale <- color_scale * c(-1,1)
+  max_std_dev <- floor(max(color_scale))
+  breaks <- -max_std_dev:max_std_dev
+  labels <- c(" ", breaks, " ")
+  breaks <- c(min(color_scale), breaks, max(color_scale))
+  
+  # Little trick to display the standard errors
+  table <- lapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    return(data.frame(covariate = covariate_name, 
+                      group = 1:ncol(m), 
+                      estimate = m["Estimate",], std.error = m["Std. Error",], 
+                      standardized = .standardized))
+  })
+  # table <- do.call(rbind, table)
+  table <- rbindlist(table)
+  
+  setnames(table, "group", .ntile)
+  table[, covariate := factor(covariate, levels = rev(covariate_names[ordering]), ordered = TRUE)]
+  
+  table[covariate %in% head(covariate_names[ordering], n_top)] %>%
+    mutate(info = paste0(estimate, "\n(", std.error, ")")) %>%
+    ggplot(aes_string(x = .ntile, y = "covariate")) +
+    # Add coloring
+    geom_raster(aes(fill = standardized)
+                , alpha = 0.9
+    ) +
+    scale_fill_distiller(palette = "RdBu",
+                         direction = 1,
+                         breaks = breaks,
+                         labels = labels,
+                         limits = color_scale,
+                         name = "Standard\nDeviation on\nNormalized\nDistribution"
+    ) +
+    # add numerics
+    geom_text(aes(label = info), size=2.1) +
+    # reformat
+    labs(title = paste0("Covariate averages within ", title_label),
+         y = "within covariate") +
+    scale_x_continuous(position = "top") #+
+  #cowplot::theme_minimal_hgrid(16)
+}
+
+```
+
+```{r avg_covariates_by_clusters}
+
+# For k-means clusters when k=3 
+avg_covars_k3_clustering_df <- clustering_joined_df %>%
+  select(-c(k4_cluster, child_id, tenure_type))
+avg_covars_k3_clustering_df$max_days_since_signup <- as.integer(avg_covars_k3_clustering_df$max_days_since_signup)
+k3_clusters_covariate_names <- colnames(avg_covars_k3_clustering_df) 
+k3_clusters_covariate_names <- k3_clusters_covariate_names[k3_clusters_covariate_names != "k3_cluster"]
+
+plot_covariate_means_by_ntile(avg_covars_k3_clustering_df, 
+                              .ntile = "k3_cluster", 
+                              k3_clusters_covariate_names,
+                              n_top = 20, # <- this can be changed to any number
+                              title_label = "k-means clusters (k=3)"
+                              )
+
+# For k-means clusters when k=4
+avg_covars_k4_clustering_df <- clustering_joined_df %>%
+  select(-c(k3_cluster, child_id, tenure_type))
+avg_covars_k4_clustering_df$max_days_since_signup <- as.integer(avg_covars_k4_clustering_df$max_days_since_signup)
+k4_clusters_covariate_names <- colnames(avg_covars_k4_clustering_df) 
+k4_clusters_covariate_names <- k4_clusters_covariate_names[k4_clusters_covariate_names != "k4_cluster"]
+
+plot_covariate_means_by_ntile(avg_covars_k4_clustering_df, 
+                              .ntile = "k4_cluster", 
+                              k4_clusters_covariate_names,
+                              n_top = 20, # <- this can be changed to any number
+                              title_label = "k-means clusters (k=4)"
+                              )
+
+# For user cohorts by tenure type 
+avg_covars_tenure_df <- clustering_joined_df %>%
+  select(-c(k3_cluster, child_id, k4_cluster))
+avg_covars_tenure_df$max_days_since_signup <- as.integer(avg_covars_tenure_df$max_days_since_signup)
+tenure_covariate_names <- colnames(avg_covars_tenure_df) 
+tenure_covariate_names <- tenure_covariate_names[tenure_covariate_names != "tenure_type"]
+
+plot_covariate_means_by_ntile(avg_covars_tenure_df, 
+                              .ntile = "tenure_type", 
+                              tenure_covariate_names,
+                              n_top = 20, # <- this can be changed to any number
+                              title_label = "subgroups by tenure type"
+                              )
+
+```
+
+The heatmap above outputs the covariate averages for each user subgroup. The colors indicate departure from the sample mean: blue indicates an average covariate value above the mean and red indicates an average value below the sample mean.
+In addition, the covariates on the y-axis are displayed by order of variation across groups. In other words, for the k-means clusters where `k=3`, the `avg_n_stories_first2wkly_sessions` variable has the most variation across user clusters (i.e. Clusters 1-3), so it is displayed first.
+
+For the k-means clusters with `k=3`, Cluster 2 is the cluster with the highest values across the majority of covariates, even after taking into account the standard error of the covariates. This implies that users in this cluster are the ones that are the most engaged with the app (at least during the first few weeks). Cluster 3 is the cluster with the second highest values across the majority of covariates and Cluster 1 is the cluster with the lowest values across the majority of covariates.
+
+For the k-means clusters with `k=4`, Cluster 2 is the cluster with the highest values across the majority of covariates, even after taking into account the standard error of the covariates. Cluster 1 is the cluster with the second highest values across the majority of covariates. Cluster 4 is the cluster with the second lowest values across the majority of covariates. Cluster 3 is the cluster with the lowest values across the majority of covariates.
+
+Furthermore, the k-means user clusters have high differences in average covariate values across clusters whereas the user cohorts by tenure type have significantly smaller differences in average covariate values across cohorts. Intuitively, this observation makes sense because we used various initial behavioral characteristics to generate user clusters with k-means whereas for the tenure-based cohorts we only used a fixed characteristics (i.e. maximum day on the app since signup) without considering any behavioral characteristics. 
+
+### Exercise
+**Do you observe any other interesting patterns or trends in the heatmap above?**
+
+## Analyzing the fixed characteristics of user clusters obtained from the k-means clustering
+Now let's analyze the fixed characteristics of users in each cluster and compare these characteristics to those of the users in cohorts created by tenure type. Also, note that the assignment of users to clusters is independent of their fixed characteristics (at least directly) because we did not use these characteristics to build the features for the k-means models.
+
+### User Acquisition Methods by User Subgroups
+
+```{r user_acquisition_method_cluster_analysis}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users <- clustering_features_df %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters <- left_join(x = filtered_child_df, y = clustering_features_df %>%
+                                            select(child_id, k3_cluster, k4_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters <- left_join(x = filtered_child_df_w_clusters, y = clustering_joined_df %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users) 
+
+# For k=3
+# Get number of users by acquistion method in each k-means cluster
+filtered_child_df_w_k3_clusters <- filtered_child_df_w_clusters %>%
+  select(k3_cluster, user) %>%
+  group_by(k3_cluster, user) %>%
+  dplyr::summarize(user_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by acquisition method in each cluster
+filtered_child_df_w_k3_clusters_total <- filtered_child_df_w_k3_clusters %>%
+  group_by(user) %>%
+  dplyr::summarize(user_k3_cluster_total = sum(user_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters <- left_join(x = filtered_child_df_w_k3_clusters, y = filtered_child_df_w_k3_clusters_total %>%
+                        select(user, user_k3_cluster_total), 
+                      by = 'user')
+
+filtered_child_df_w_k3_clusters$user_k3_cluster_prop = filtered_child_df_w_k3_clusters$user_k3_cluster/filtered_child_df_w_k3_clusters$user_k3_cluster_total
+
+# Get cluster labels of users for k-means model with k=3
+filtered_child_df_w_k3_clusters$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters$k3_cluster)
+
+# For k=4 
+# Get number of users by acquistion method in each k-means cluster
+filtered_child_df_w_k4_clusters <- filtered_child_df_w_clusters %>%
+  select(k4_cluster, user) %>%
+  group_by(k4_cluster, user) %>%
+  dplyr::summarize(user_k4_cluster = n()) %>%
+  ungroup %>%
+  drop_na()  
+
+# Get proportion of users by acquisition method in each cluster
+filtered_child_df_w_k4_clusters_total <- filtered_child_df_w_k4_clusters %>%
+  group_by(user) %>%
+  dplyr::summarize(user_k4_cluster_total = sum(user_k4_cluster)) 
+
+filtered_child_df_w_k4_clusters <- left_join(x = filtered_child_df_w_k4_clusters, y = filtered_child_df_w_k4_clusters_total %>%
+                        select(user, user_k4_cluster_total), 
+                      by = 'user')
+
+filtered_child_df_w_k4_clusters$user_k4_cluster_prop = filtered_child_df_w_k4_clusters$user_k4_cluster/filtered_child_df_w_k4_clusters$user_k4_cluster_total
+
+# Get cluster labels of users for k-means model with k=4
+filtered_child_df_w_k4_clusters$k4_cluster_label <- factor(filtered_child_df_w_k4_clusters$k4_cluster)
+
+# Get number of users by acquistion method in each user cohort created by tenure type
+filtered_child_df_w_tenures <- filtered_child_df_w_clusters %>%
+  select(tenure_type, user) %>%
+  group_by(tenure_type, user) %>%
+  dplyr::summarize(user_tenure_type = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by acquisition method in each cluster
+filtered_child_df_w_tenures_total <- filtered_child_df_w_tenures %>%
+  group_by(user) %>%
+  dplyr::summarize(user_tenure_type_total = sum(user_tenure_type)) 
+
+filtered_child_df_w_tenures <- left_join(x = filtered_child_df_w_tenures, y = filtered_child_df_w_tenures_total %>%
+                        select(user, user_tenure_type_total), 
+                      by = 'user')
+
+filtered_child_df_w_tenures$user_tenure_type_prop = filtered_child_df_w_tenures$user_tenure_type/filtered_child_df_w_tenures$user_tenure_type_total
+
+filtered_child_df_w_tenures$tenure_type <- factor(filtered_child_df_w_tenures$tenure_type)
+
+# Plot the user acquistion method for each cluster of k-means clustering 
+# For k=3 
+p1 <- ggplot(filtered_child_df_w_k3_clusters,
+  aes(user, user_k3_cluster_prop, fill = k3_cluster_label)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("User Acquisition Method") + 
+  ylab("Proportion of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  ggtitle("K-means Clusters (k=3)")
+
+# For k=4 
+p2 <- ggplot(filtered_child_df_w_k4_clusters,
+  aes(user, user_k4_cluster_prop, fill = k4_cluster_label)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("User Acquisition Method") + 
+  ylab("Proportion of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  ggtitle("K-means Clusters (k=4)")
+
+# For users by tenure type 
+p3 <- ggplot(filtered_child_df_w_tenures,
+  aes(user, user_tenure_type_prop, fill = tenure_type)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("User Acquisition Method") + 
+  ylab("Proportion of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  ggtitle("Tenure Cohorts")
+
+grid.arrange(p1, p2, p3, nrow = 2)
+
+```
+
+The two plots in the top row represent the proportion of users by acquisition method in each cluster. These user clusters are generated by the k-means models with `k=3` and `k=4`, respectively.
+
+The plot in the second row represents the proportion of users by acquisition method in each cohort. These user cohorts are generated by classifying users into one of the 3 tenure types ("short-term", "medium-term", and "long-term") based on their tenure on the app (i.e. the maximum days active on the app since signup).
+
+Interestingly, the proportion of users by acquisition method is very similar across clusters for the k-means clusters, both when `k=3` and `k=4`. As for the cohorts by tenure type, the proportions of b2b users who are classified as medium- and long-term users are higher than the proportions of users by other acquisition methods, which is what we observed in the previous tutorials as well.
+
+### Exercise
+**Perform similar analysis using other fixed characteristics for user subgroups. Are there any interesting patterns or trends?** 
+
+**Compare the k-means user clusters to other user subgroups in addition to the user cohorts by tenure type. How do they differ? Can you obtain any interesting findings from these user subgroup comparisons?**
+
+# Predicting user engagement levels using fixed and initial behavioral user characteristics
+
+We begin by investigating whether we can predict which users will remain active on the app after the first X weeks based on their fixed and initial behavioral characteristics. Accurately predicting whether a user will remain on the app or not after a certain time period, in particular by using their fixed and initial behavioral characteristics, could help S2M implement different strategies (i.e. send nudges on the app, unlock unique features, introduce new skills, etc.) to retain and re-engage the users who are most likely to churn based on their initial characteristics.
+
+Thus, in this section, we build machine learning models aimed at answering the following question:
+
+*Considering users who have at least n sessions in the first m weeks, is it possible to accurately predict who will maintain a minimum level of engagement over x weeks and who will not?*
+
+In our models, we let n=6, m=3, and x=8. 
+
+We pick m to be 3 (weeks) because the behavioral features in the first 2 weeks are more likely to be noisy, which in turn, would make it challenging for the model to predict accurately. 
+
+We pick n to be 6 (sessions) because in the last tutorial, we observed that the average number of active days/week for long-term users in the first 3 weeks is ~2.2 days/week. The intuition for this is that we want to predict retention rates for users who initially exhibit app usage behavior that is similar to long-term users' initial behavior. Thus, by focusing on this subsample of users, we can potentially provide insight into other important user characteristics that S2M could consider to determine whether a user is likely to stay on the app or exit based on their initial behavior on the app. 
+
+We pick x to be 8 (weeks) by taking into account the fact that the user-story interactions data is from May 1, 2020 to February 1, 2020. Otherwise, if we were to pick a much higher x, we might end up shrinking our sample size non-trivially.
+
+### Exercise
+
+**Pick different n, m, and x values and investigate the predictive performance of the ML models with these new parameters.**
+
+We begin by filtering out users in our dataframes who have signed up on the app on or after December 1st, 2020. Otherwise, we cannot observe whether they remained active on the app after 8 weeks as we do not have activity data on or after February 1st, 2021. As in previous tutorials, you might need to modify this filtering logic based on the question that you are trying to answer.
+
+```{r filter_user_data}
+# Select users who created their account on or after Dec. 1, 2020
+post_dec_users <- filtered_child_df %>%
+  dplyr::filter(created_at >= "2020-12-01") %>%
+  pull(child_id)
+
+# Filter out users who created their account on or after Dec. 1, 2020
+filtered_logged_df_may_dec <- filtered_logged_df %>%
+  dplyr::filter(!(child_id %in% post_dec_users))
+
+# Get users' highest number of days active since signup
+user_max_sessions <- filtered_logged_df_may_dec %>% 
+  select(child_id, sessions_since_signup, days_since_signup) %>%
+  group_by(child_id) %>% 
+  dplyr::summarize(sessions_since_signup = max(sessions_since_signup),days_since_signup=max(days_since_signup))
+```
+
+Then, we filter out users who do not meet the app activity criteria we define. That is, users who have less than n sessions in the first m weeks (in our case, n=6; m=3). 
+
+```{r get_user_first_3wk_engagement}
+user_max_sessions_3wks = user_max_sessions %>%
+  dplyr::filter(days_since_signup >= 21) %>% 
+  pull(child_id)
+  
+# Get users who exhibit the characteristics described in the second model approach (i.e. n=6;m=3)
+users_frst_3wks_daily_stories <- filtered_logged_df_may_dec %>%
+  dplyr::filter(child_id %in% user_max_sessions_3wks) %>%
+  dplyr::filter(days_since_signup < 21) %>%  # 3 weeks = 21 days
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions = n_distinct(days_since_signup))  %>%
+  dplyr::filter(n_sessions >= 6) %>% 
+  pull(child_id)
+
+# Create dataframe for users who exhibit the characteristics described in the second model approach 
+filtered_logged_df_min_engagement_3wks = filtered_logged_df_may_dec %>%
+  dplyr::filter(child_id %in% users_frst_3wks_daily_stories)
+```
+
+## Feature engineering for building predictive models
+As before, we transform the raw data into features that better represent the underlying problem to our model to train our machine learning model. We use both fixed and initial behavioral characteristics to build the model features.
+
+### Features related to users' behavioral characteristics
+We create the same features for the users' first week, first two weeks, and first three weeks on the app just as we did for the clustering analysis.
+
+```{r first_wk_feature_engineering}
+# total number of stories in first weekly session
+tot_num_stories_firstwkly_session = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, sessions_since_signup, story_id)%>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_firstwkly_session = n()) 
+
+# average number of stories per daily session in first week 
+avg_num_stories_daily_session_firstwk = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_firstwk = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_firstwk = mean(n_stories_firstwk)) 
+
+features_df <- left_join(x = tot_num_stories_firstwkly_session, y = avg_num_stories_daily_session_firstwk %>%
+                        select(child_id, avg_n_stories_firstwk), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first week 
+num_daily_sessions_firstwk = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_firstwk = n_distinct(days_since_signup))
+
+features_df <- left_join(x = features_df, y = num_daily_sessions_firstwk %>%
+                        select(child_id, n_sessions_firstwk), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first week 
+num_unique_stories_firstwk = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_firstwk = n_distinct(story_id))
+
+features_df <- left_join(x = features_df, y = num_unique_stories_firstwk %>%
+                        select(child_id, unique_stories_firstwk), 
+                      by = 'child_id')
+
+# number of unique app features used in first week 
+num_unique_sources_firstwk = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_firstwk = n_distinct(source_page_id))
+
+features_df <- left_join(x = features_df, y = num_unique_sources_firstwk %>%
+                        select(child_id, unique_sources_firstwk), 
+                      by = 'child_id')
+```
+
+```{r second_wk_feature_engineering}
+# total number of stories in first two weekly sessions
+tot_num_stories_first2wkly_session = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first2wkly_sessions = n()) 
+
+features_df <- left_join(x = features_df, y = tot_num_stories_first2wkly_session %>%
+                        select(child_id, n_stories_first2wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first two weekly sessions
+tot_num_stories_first2wkly_session = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first2wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first2wkly_sessions = mean(n_stories_first2wkly_sessions))
+
+features_df <- left_join(x = features_df, y = tot_num_stories_first2wkly_session %>%
+                        select(child_id, avg_n_stories_first2wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first two weeks
+avg_num_stories_daily_session_first2wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first2wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first2wks = mean(n_stories_first2wks)) 
+
+features_df <- left_join(x = features_df, y = avg_num_stories_daily_session_first2wks %>%
+                        select(child_id, avg_n_stories_first2wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first two weeks
+num_daily_sessions_first2wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first2wks = n_distinct(days_since_signup))
+
+features_df <- left_join(x = features_df, y = num_daily_sessions_first2wks %>%
+                        select(child_id, n_sessions_first2wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first two weeks
+num_unique_stories_first2wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first2wks = n_distinct(story_id))
+
+features_df <- left_join(x = features_df, y = num_unique_stories_first2wks %>%
+                        select(child_id, unique_stories_first2wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first two weeks
+num_unique_sources_first2wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first2wks = n_distinct(source_page_id))
+
+features_df <- left_join(x = features_df, y = num_unique_sources_first2wks %>%
+                        select(child_id, unique_sources_first2wks), 
+                      by = 'child_id')
+```
+
+```{r third_wk_feature_engineering}
+# total number of stories in first three weekly sessions
+tot_num_stories_first3wkly_session = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first3wkly_sessions = n()) 
+
+features_df <- left_join(x = features_df, y = tot_num_stories_first3wkly_session %>%
+                        select(child_id, n_stories_first3wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first three weekly sessions
+tot_num_stories_first3wkly_session = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first3wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first3wkly_sessions = mean(n_stories_first3wkly_sessions))
+
+features_df <- left_join(x = features_df, y = tot_num_stories_first3wkly_session %>%
+                        select(child_id, avg_n_stories_first3wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first three weeks
+avg_num_stories_daily_session_first3wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first3wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first3wks = mean(n_stories_first3wks)) 
+
+features_df <- left_join(x = features_df, y = avg_num_stories_daily_session_first3wks %>%
+                        select(child_id, avg_n_stories_first3wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first three weeks
+num_daily_sessions_first3wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first3wks = n_distinct(days_since_signup))
+
+features_df <- left_join(x = features_df, y = num_daily_sessions_first3wks %>%
+                        select(child_id, n_sessions_first3wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first three weeks
+num_unique_stories_first3wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first3wks = n_distinct(story_id))
+
+features_df <- left_join(x = features_df, y = num_unique_stories_first3wks %>%
+                        select(child_id, unique_stories_first3wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 3 weeks
+num_unique_sources_first3wks = filtered_logged_df_min_engagement_3wks  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first3wks = n_distinct(source_page_id))
+
+features_df <- left_join(x = features_df, y = num_unique_sources_first3wks %>%
+                        select(child_id, unique_sources_first3wks), 
+                      by = 'child_id')
+```
+
+### Features related to users' fixed characteristics
+We next create the following features using users' fixed characteristics: 
+
+* Grade level
+* Acquisition Method 
+
+As we have observed in the previous descriptive analysis tutorials, users with different fixed characteristics exhibit different app usage behaviors. Thus, it is important to incorporate the users' fixed characteristics (which we can observe from the first day a user signs up on the app) into our model to increase the model's predictive power.
+
+```{r fixed_characteristics_feature_engineering}
+# get user's fixed characteristics (grade and acquisition method) 
+users_fixed_chars = filtered_logged_df_min_engagement_3wks %>%
+  select(child_id, grade, user) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(grade = unique(grade), user=unique(user))
+
+features_df  <- left_join(x = features_df, y = users_fixed_chars, by = 'child_id')
+
+# get the highest number of days and weeks a user is active since they sign up on the app
+users_max_sessions_var = filtered_logged_df_min_engagement_3wks %>%
+  select(child_id, sessions_since_signup, days_since_signup) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(max_sessions_since_signup = max(sessions_since_signup), max_days_since_signup=max(days_since_signup))
+
+features_df <- left_join(x = features_df, y = users_max_sessions_var %>%
+                         select(child_id, max_sessions_since_signup, max_days_since_signup), 
+                      by = 'child_id')
+
+# Convert the table into a dataframe object
+class(features_df)<-class(as.data.frame(features_df))
+
+# Store variables to be converted into categorical ones
+categorical<-c("grade" , "user")
+# 'lapply' applies a given function (in this case factor) to each column stored in the 'categorical' variable and converts the variable into a categorical one
+features_df[ , categorical] <- lapply(features_df[ ,categorical] , factor)
+```
+
+Note that we have also converted these features based on users' fixed characteristics (i.e. grade level and acquisition method) into categorical variables. It is important to do so such that the model does not attempt to interpret the categories of these variables as numerical values. In other words, if grade 1=1 and grade5=5, there is no meaningful increase in the value of `grade`, we just use different numerical values to distinguish between these two grade levels. We could have assigned grade1=5 and grade5=1 and it should not change how these two categories of grade level affect the model predictions.
+
+### Exercise
+
+**You are highly encouraged to brainstorm and engineer other features that could improve the model's predictive performance. If you do so, add those features to the model and investigate how they affect the performance.**
+
+## Preprocessing Features  
+The final step before building the predictive models is to preprocess the features that we will use to train our model on.
+The preprocessing step includes: 
+
+* Creating the dependent variable, y.
+* Splitting the dataset into training and test sets.
+* Standardizing the continuous features in both the training and test sets using the parameters (mean and standard deviation) of the training set. 
+
+We create the binary dependent variable, `retained_8wks`, which we assign a value of 1 if a user has remained active on the app for at least the first 8 weeks and a value of 0 if a user has stopped using the app within the first 8 weeks.
+
+Next, we split the dataset into a training and test set. We do this by drawing a random sample of 70% into the training set and 30% into the test set. The reason for this train-test split is that we want to train our model on the bulk of the data and then check how well our model performs on data the model has never seen. This way we make sure that our model does not overfit (i.e. is too closely modeled on the training dataset and does not generalize well to other datasets). Note that 80-20 is also a common train-test split method. However, because the number of users in our processed dataset is relatively small (~2600 users), we want to make sure that we include a sufficient number of users from both classes in our test set (retained and not retained after 8 weeks) to understand the performance of the model on both user classes.
+
+After splitting the dataset, we standardize our features by centering (subtracting the mean) and scaling (dividing by standard deviation) them. We compute those parameters for standardization on the training set (i.e. means and standard deviations) and apply the same parameters on the continuous variables of both the training and test sets. The reason for this standardization is that machine learning algorithms (e.g. linear regression, logistic regression) use gradient descent as an optimization technique. Gradient descent uses a step size for each feature to update the model parameters (i.e. coefficients) in order to minimize a cost function, which in turn improves our model's predictive performance. Due to the presence of features X in the gradient descent formula, the values of these features affect the step size of the gradient descent. Thus, the difference in ranges of features leads to different step sizes for each feature. To ensure that the steps for gradient descent are updated at the same rate for all features and that the algorithm moves smoothly towards its convergence point (i.e. minima), we scale the dataset that we feed into our model.
+See [https://ml-cheatsheet.readthedocs.io/en/latest/gradient_descent.html](https://ml-cheatsheet.readthedocs.io/en/latest/gradient_descent.html) for more on gradient descent. 
+
+As a final step, we convert the categorical variables into dummy variables because, as discussed above, we do not want the model to interpret the categories of these variables as numerical values.
+
+```{r train_test_split}
+# Create the dependent variable 'retained_8wks' using the `max_sessions_since_signup` variable
+# If max_sessions_since_signup is greater than 7 it means that user was active for at least the first 8 weeks (bc in the first week `max_sessions_since_signup` equals 0) so we assign 'retained_8wks' a value of 1  
+features_df$retained_8wks <- ifelse(features_df$max_sessions_since_signup>7, 1, 0)
+
+# Use train_fraction to split the dataset into training and test sets 
+train_fraction <- 0.70  
+n <- dim(features_df)[1]
+
+# Set seed to ensure same training and test set used for model evaluation in different scripts
+set.seed(5555) 
+
+# Randomly select the specified fraction of indices to be included in the training set 
+train_idx <- sample.int(n, replace=F, size=floor(n*train_fraction))
+
+# Generate training sample using the 70-30 split rule
+features_train <- as.data.frame(features_df[train_idx,])
+features_test <- as.data.frame(features_df[-train_idx,])
+
+# Select continuous variables to be scaled
+cont<- features_df %>%select(-c(child_id, grade, 
+                        user, retained_8wks))
+cont<-c(colnames(cont))
+
+# Save unscaled features for model result interpretations later on 
+features_train_unscaled <- features_train
+features_test_unscaled <- features_test
+
+# Select continuous variables to be scaled 
+# Compute parameters for standardization on training set 
+pre_proc_val <- preProcess(features_train[,cont], method = c("center", "scale"))
+
+# Standardize the continuous variables of the training and test sets by applying the 'pre_proc_val' parameters above
+features_train[,cont] = predict(pre_proc_val, features_train[,cont])
+features_test[,cont] = predict(pre_proc_val, features_test[,cont])
+
+# Make dummy variables for variables of both training and test sets (scaled and unscaled versions)
+cols_reg = c(colnames(features_df))
+dummies <- dummyVars(retained_8wks ~ ., data = features_df[,cols_reg])
+
+features_train_dummies = predict(dummies, newdata = features_train[,cols_reg])
+features_test_dummies = predict(dummies, newdata = features_test[,cols_reg])
+```
+
+## Building machine learning models to predict user engagement after first X weeks on the app
+In this tutorial, we build a machine learning model to predict a user's engagement after the first 8 weeks on the app. However, since `x (first 8 weeks)` was chosen somewhat arbitrarily, you are highly encouraged to modify this variable and investigate the model performance.
+
+**Exercise: You might consider building other types of models, using more sophisticated approaches to pick the input features for the models, and/or using similar techniques to what you have done in your individual ML assignment in order to fine-tune the model parameters.** 
+
+## Logistic regression model
+
+We start by building a logistic regression model in which the `y` variable is the binary variable `retained_8wks`, which equals 1 if the user has been active for at least 8 weeks and 0 otherwise. We then evaluate the logistic model performance by performing predictions on the test set. We use these predictions to compute the model performance metrics (i.e. accuracy, precision, and recall scores) and build a confusion matrix. These performance metrics as well as the confusion matrix allow us to compare the logistic model performance with the performance of other models we will be building in the next subsections.
+
+A logistic regression models is the go-to, baseline machine learning model used for binary classification. Similar to a linear regression, the input values X of a logistic regression, are combined linearly using weights or coefficient values to predict an output value, y; however, the output value of a logistic regression (also known as the score) is mapped into a value between 0 and 1 using the equation below (which is also known as the sigmoid function):
+$$y = 1 / (1 + e^{-score})$$
+
+Thus, in binary classification problems, we use logistic regression to model the probability that the input values X belong to the default class (y=1 where y=`retained_8wks`). Note that to assign a class to these input values, we need to transform the model probabilities into binary values (0 or 1). In other words, if the output value y is greater than 0.5 then the user is more likely to remain active on the app after the first 8 weeks, so we assign the user the default class of 1.
+
+```{r user_engagement_logistic_model}
+# Create the dependent variable 'retained_8wks' 
+y_train <- factor(features_train$retained_8wks)
+y_test <- factor(features_test$retained_8wks)
+
+# `max_sessions_since_signup` and `max_days_since_signup` are perfectly correlated with `retained_8wks` as we use the former to create the latter indicator variable
+X_train <- data.frame(features_train_dummies) %>% select(-c(max_sessions_since_signup, 
+                                                            max_days_since_signup, 
+                                                            child_id,
+                                                            sessions_since_signup))
+
+X_test <- data.frame(features_test_dummies) %>% select(-c(max_sessions_since_signup, 
+                                                            max_days_since_signup, 
+                                                            child_id,
+                                                          sessions_since_signup))
+
+# Create a training set dataframe as an input to the logistic model
+train_lm<-as.data.frame(cbind(X_train, y_train))
+colnames(train_lm)<-c(colnames(X_train),"retained_8wks")
+
+# Create a test set dataframe to be used after building the logistic model for performance evaluation
+test_lm<-as.data.frame(cbind(X_test, y_test))
+colnames(test_lm)<-c(colnames(X_test),"retained_8wks")
+
+# Create a formula from a string; i.e. "y~ x1 + x2 + x3" where y=log_d_earn and X=cps_log_train_dummies
+logit_reg<-as.formula(
+  paste("retained_8wks", paste(colnames(X_train), collapse = " + "), sep = " ~ "))
+
+# Build a logistic model to predict whether a user will churn/exit after 8 weeks
+logit_model <-glm(logit_reg, data = train_lm, family="binomial")
+
+# Get the summary statistics for this logistic model
+summary(logit_model)
+```
+
+Note that for the dummy variables, R automatically assigns NA as a coefficient to the baseline dummy variable when running a regression. This NA indicates that the variable in question (i.e. `user.paid`) is linearly related to the other variables (in this case, `user.b2b`,  `user.b2c`, and  `user.expired`). Thus, the regression would not have a unique solution without dropping one of these variables (in this case, `user.paid`). Also, note that these NA values do not have any effect on the computations of other coefficients.
+
+We now evaluate the performance of this logistic regression model using the accuracy, precision, and recall scores (among other scores) on the test set. 
+
+```{r logit_preds}
+# Predict and evaluate on training set
+logit_probs_train <- predict(logit_model, newdata = train_lm, type="response")
+X_train$logit_probs <- logit_probs_train
+# if predicted probability value > 0.5, user is more likely to remain active on the app after 8 weeks
+logit_preds_train <- ifelse(logit_probs_train > 0.5, 1, 0)
+X_train$logit_preds <- logit_preds_train
+  
+# Model accuracy and confusion matrix for training set
+mean(logit_preds_train == y_train)
+confusionMatrix(data=factor(logit_preds_train), y_train)
+
+# Predict and evaluate on test set
+logit_probs_test <- predict(logit_model, newdata = test_lm, type="response")
+X_test$logit_probs <- logit_probs_test
+# if predicted probability value > 0.5, user is more likely to remain active on the app after 8 weeks
+logit_preds_test <- ifelse(logit_probs_test > 0.5, 1, 0)
+X_test$logit_preds <- logit_preds_test
+  
+# Model accuracy and confusion matrix for test set
+mean(logit_preds_test == y_test)
+confusionMatrix(data=factor(logit_preds_test), y_test)
+
+# Create a data frame with targets and predictions
+d_binomial <- tibble("target" = y_test,
+                     "prediction" = logit_preds_test)
+
+# Use evaluate() function to evaluate the predictions and get the confusion matrix tibble
+eval <- evaluate(d_binomial,
+                 target_col = "target",
+                 prediction_cols = "prediction",
+                 type = "binomial")
+
+# Plot the eval output that contains the confusion matrix tibble
+plot_confusion_matrix(eval$`Confusion Matrix`[[1]],
+                      add_normalized=FALSE)
+```
+
+The `target` represents the true class of the observations; in our case, the target `retained_8wks` can be either 0 or 1.
+The `prediction` represents the predicted class by the model.
+
+There are 4 different scenarios depicted by each tile of the confusion matrix: 
+
+* Tile 1 (Column 1, Row 1): the true class and the predicted class are both 1.
+* Tile 2 (Column 2, Row 1): the true class is 0, but the predicted class is 1.
+* Tile 3 (Column 1, Row 2): the true class is 1, but the predicted class is 0.
+* Tile 4 (Column 2, Row 2): the true class and the predicted class are both 0.
+
+In the middle of each tile, we have the count of the number of observations who fall within that tile. In other words, tile 1 tells us that the model has correctly identified 428 users who remain active on the app for at least 8 weeks.
+
+At the bottom of each tile, we have the column percentage. That is, out of all the observations where Target is 1, 85.8% of them were predicted to be 1 and 14.2% were predicted to be 0.
+
+At the right side of each tile, we have the row percentage. I.e. out of all the observations where Prediction is 1, 66.3% of them were actually 1 while 33.7% were actually 0.
+
+Also, the color intensity visually represents the count values of each tile. The darker the color of a tile, the higher the count of observations in that tile.
+
+We can observe that the model is better at identifying the users who will remain active on the app after the first 8 weeks (see the column percentage in Tile 1) rather than identifying the users who will stop using the app within the first 8 weeks (see the column percentage in Tile 4). One possible explanation for this is that the dataset the model is trained on is unbalanced. As can be observed from the confusion matrix for the training set above, there are 1,114 users who remain on the app after the first 8 weeks and 675 users who stop using the app within the first 8 weeks in the training set. 
+
+Furthermore, whenever you are working on a classification problem, it is highly important to determine which metric is important for the specific problem you are trying to solve. Accuracy will not always be the appropriate metric to use for selecting the best model. To determine the appropriate metric(s) to use for evaluating this logistic regression model, we first need to understand the differences between the metrics (in this case, accuracy, precision, and recall).
+
+Accuracy is simply the number of correct predictions divided by the total number of predictions. 
+Mathematically,
+$$Accuracy = \frac{\text{Number of correct predictions}}{\text{Total number of predictions}} = \frac{TP + TN}{TP+TN+FP+FN}$$
+where TP stands for True Positive, TN stands for True Negative, FP stands for False Positive, FN stands for False Negative.
+
+Precision is the number of actual positives the model captures out of all the predicted positives.
+Mathematically,
+$$Precision = \frac{\text{True positives}}{\text{Total predicted positives}} = \frac{TP}{TP+FP}$$
+
+Recall is the number of actual positives the model captures through labeling them as Positive (True Positive). 
+Mathematically,
+$$Recall = \frac{\text{True positives}}{\text{Total actual positives}} = \frac{TP}{TP+FN}$$
+
+We select the best model by analyzing the accuracy, precision, and/or recall scores depending on which type of incorrect prediction has a higher cost associated with it in our classification problem. For example, if our classification problem is to detect whether a patient is sick or not (where the label of patient being sick is 1) then the cost associated with a False Negative is higher than the cost associated with a False Positive because not detecting that a patient is sick (when the patient is actually sick) is worse than classifying a healthy patient as sick. So, in this case, we would opt for using recall as a metric to select the best model.
+
+### Regularized logistic regression & k-fold cross-validation
+
+We now build a regularized logistic regression model that prevents the model from over-fitting by penalizing the model coefficients, similar to the regularized linear regression models we built in the *Intro to ML* tutorial. Specifically, we build a lasso logistic regression, which penalizes the sum of squared coefficients. However, you are free to build a different type of regularized logistic model, such as the ridge and/or elastic-net (which is a combination of ridge and lasso) logistic models.
+
+We then perform cross-validation to find the optimal lambda (i.e. regularization parameter) and evaluate the performance of the lasso logistic model with this optimal lambda on the test set. As discussed in the *Intro to ML* tutorial, cross-validation is a technique that is used to evaluate the performance of machine learning models by making predictions on different subsets of the data and tuning the model parameters (i.e. by finding the model parameters that minimize the cross-validation error). 
+
+```{r kfold_cv_logit_model}
+# Dummy code categorical predictor variables
+X_cv_train <- model.matrix(retained_8wks~., train_lm)[,-1]
+
+# Find the best lambda using cross-validation
+cv_logit <- cv.glmnet(X_cv_train, y_train, alpha = 0, family = "binomial") # alpha=0 for lasso logistic regression
+
+# Fit the final model on the training data
+cv_lasso_logit_model <- glmnet(X_cv_train, y_train, alpha = 0, family = "binomial",
+                lambda = cv_logit$lambda.min)
+coef(cv_lasso_logit_model)
+
+# Make predictions on the test data
+X_cv_test <- model.matrix(retained_8wks ~., test_lm)[,-1]
+cv_logit_probs_test <- cv_lasso_logit_model %>% predict(newx = X_cv_test)
+cv_logit_preds_test <- ifelse(cv_logit_probs_test > 0.5, "1", "0")
+
+# Model accuracy and confusion matrix for test set 
+mean(cv_logit_preds_test == y_test)
+confusionMatrix(data=factor(cv_logit_preds_test), y_test)
+
+# Create a data frame with targets and predictions
+d_binomial <- tibble("target" = y_test,
+                     "prediction" = cv_logit_preds_test)
+
+# Use evaluate() function to evaluate the predictions and get the confusion matrix tibble
+eval <- evaluate(d_binomial,
+                 target_col = "target",
+                 prediction_cols = "prediction",
+                 type = "binomial")
+
+# Plot the eval output that contains the confusion matrix tibble
+plot_confusion_matrix(eval$`Confusion Matrix`[[1]],
+                      add_normalized=FALSE)
+```
+
+By regularizing the model coefficients, we get an accuracy score of ~59.62%, which is ~3% lower than the accuracy of the unregularized logistic regression model.
+
+Furthermore, we observe that the lasso logistic model is better than the unregularized logistic model at identifying the users who will stop using the app within their first 8 weeks (i.e. `target=0` and `prediction=0` column percentage increases from 22.4% to 77.6%). However, it is worse at identifying the users who will remain active on the app after the first 8 weeks (i.e. `target=1` and `prediction=1` column percentage decreases from 85.8% to 49.5%). It is up to you as the analyst to determine the main goal(s) of building a predictive model and decide what metrics to optimize accordingly, which can involve trade-offs between different performance metrics.
+
+### Exercise
+
+**Think about potential approaches you could take to improve the model performance. I.e. you could balance the dataset (see some techniques outlined [here](https://elitedatascience.com/imbalanced-classes)) or redefine the question we introduced at the beginning of this section that motivated our process of building predictive models.**
+
+**Which metric would you use to select the best model in our classification problem? Why?**
+
+### Analyzing the model predictions by user subgroups
+
+#### Average covariates by prediction ranking 
+
+As we have seen above, any interpretation needs to take into account the joint distribution of covariates. One possible heuristic is to consider data-driven subgroups. For example, we can analyze what differentiates observations whose predicted probabilities are high from those whose predicted probabilities are low. 
+
+The following heatmap visualizes the results for the user quartiles created based on the predicted classes (either 0 or 1).
+
+```{r plot_covariate_means_by_binary_preds}
+# Table of covariates means/sd by n.tile. The n.tile is the variable that 
+# defines the subgroups here, which needs to be done before running the function.
+
+plot_covariate_means_by_ntile <- function(.df, .ntile = "ntile", covariate_names, n_top = 10) {
+  .df <- as.data.frame(.df)
+  covariate_names <- covariate_names
+  .df[, .ntile] <- as.factor(.df[, .ntile])
+
+  # Regress each covariate on ntile/subgroup assignment to means p
+  cov_means <- lapply(covariate_names, function(covariate) {
+    lm_robust(as.formula(paste0(covariate, " ~ 0 + ", .ntile)), data = .df, se_type = "stata")
+  })
+
+  # Extract the mean and standard deviation of each covariate per ntile/subgroup
+  cov_table <- lapply(cov_means, function(cov_mean) {
+    means <- as.data.frame(t(coef(summary(cov_mean))[,c("Estimate", "Std. Error")]))
+    means
+  })
+  
+  # Preparation to color the chart
+  temp_standardized <- sapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    .standardized
+  })
+  
+  colnames(temp_standardized) <- covariate_names
+  ordering <- order(apply(temp_standardized, MARGIN = 2, function(x) {.range <- range(x); abs(.range[2] - .range[1])}), decreasing = TRUE)
+  
+  # fwrite(tibble::rownames_to_column(as.data.frame(t(temp_standardized)[ordering,])), 
+  #        paste0(directory$data, "/covariate_standardized_means_by_", .ntile, ".csv"))
+  
+  color_scale <- max(abs(c(max(temp_standardized, na.rm = TRUE), min(temp_standardized, na.rm = TRUE))))
+  color_scale <- color_scale * c(-1,1)
+  max_std_dev <- floor(max(color_scale))
+  breaks <- -max_std_dev:max_std_dev
+  labels <- c(" ", breaks, " ")
+  breaks <- c(min(color_scale), breaks, max(color_scale))
+  
+  # Little trick to display the standard errors
+  table <- lapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    return(data.frame(covariate = covariate_name, 
+                      group = 1:ncol(m), 
+                      estimate = m["Estimate",], std.error = m["Std. Error",], 
+                      standardized = .standardized))
+  })
+  # table <- do.call(rbind, table)
+  table <- rbindlist(table)
+  setnames(table, "group", .ntile)
+  table[, covariate := factor(covariate, levels = rev(covariate_names[ordering]), ordered = TRUE)]
+  table[covariate %in% head(covariate_names[ordering], n_top)] %>%
+    mutate(info = paste0(estimate, "\n(", std.error, ")")) %>%
+    ggplot(aes_string(x = .ntile, y = "covariate")) +
+    # Add coloring
+    geom_raster(aes(fill = standardized)
+                , alpha = 0.9
+    ) +
+    scale_fill_distiller(palette = "RdBu",
+                         direction = 1,
+                         breaks = breaks,
+                         labels = labels,
+                         limits = color_scale,
+                         name = "Standard\nDeviation on\nNormalized\nDistribution"
+    ) +
+    # add numerics
+    geom_text(aes(label = info), size=2.1) +
+    # reformat
+    labs(title = paste0("Average covariate values within group based on binary prediction ranking (cutoff of 0.5)"),
+         y = "within covariate") +
+    scale_x_continuous(position = "top") +
+   scale_x_discrete(position = "top", limits=c("0","1")) +
+    theme(plot.title = element_text(size = 8, face = "bold"))
+  #cowplot::theme_minimal_hgrid(16)
+}
+
+# Now use the function to get average covariates for user subgroups by binary prediction ranking 
+X_train <- X_train %>% mutate(quantile_probs = ntile(X_train$logit_probs, 4))
+train_data<-as.data.frame(cbind(X_train, features_train$retained_8wks))
+colnames(train_data)<-c(colnames(X_train),"retained_8wks")
+X_test <- X_test %>% mutate(quantile_probs = ntile(X_test$logit_probs, 4))
+test_data<-as.data.frame(cbind(X_test, features_test$retained_8wks))
+colnames(test_data)<-c(colnames(X_test),"retained_8wks")
+data = rbind(train_data, test_data) %>% 
+  select(-c(quantile_probs, 
+            logit_probs))
+covar_names = colnames(data)[colnames(data) != "logit_preds"]
+plot_covariate_means_by_ntile(data, 
+                              .ntile = "logit_preds", 
+                              covar_names,
+                              n_top = 20 # <- this can be changed to any number
+)
+
+
+
+```
+
+The following heatmap visualizes the results for the user quartiles created based on the predicted class probabilities.
+
+```{r plot_covariate_means_by_pred_probs_quartiles}
+
+# Table of covariates means/sd by n.tile. The n.tile is the variable that 
+# defines the subgroups here, which needs to be done before running the function.
+
+plot_covariate_means_by_ntile <- function(.df, .ntile = "ntile", covariate_names, n_top = 10) {
+  .df <- as.data.frame(.df)
+  covariate_names <- covariate_names
+  .df[, .ntile] <- as.factor(.df[, .ntile])
+
+  # Regress each covariate on ntile/subgroup assignment to means p
+  cov_means <- lapply(covariate_names, function(covariate) {
+    lm_robust(as.formula(paste0(covariate, " ~ 0 + ", .ntile)), data = .df, se_type = "stata")
+  })
+
+  # Extract the mean and standard deviation of each covariate per ntile/subgroup
+  cov_table <- lapply(cov_means, function(cov_mean) {
+    means <- as.data.frame(t(coef(summary(cov_mean))[,c("Estimate", "Std. Error")]))
+    means
+  })
+  
+  # Preparation to color the chart
+  temp_standardized <- sapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    .standardized
+  })
+  
+  colnames(temp_standardized) <- covariate_names
+  ordering <- order(apply(temp_standardized, MARGIN = 2, function(x) {.range <- range(x); abs(.range[2] - .range[1])}), decreasing = TRUE)
+  
+  # fwrite(tibble::rownames_to_column(as.data.frame(t(temp_standardized)[ordering,])), 
+  #        paste0(directory$data, "/covariate_standardized_means_by_", .ntile, ".csv"))
+  
+  color_scale <- max(abs(c(max(temp_standardized, na.rm = TRUE), min(temp_standardized, na.rm = TRUE))))
+  color_scale <- color_scale * c(-1,1)
+  max_std_dev <- floor(max(color_scale))
+  breaks <- -max_std_dev:max_std_dev
+  labels <- c(" ", breaks, " ")
+  breaks <- c(min(color_scale), breaks, max(color_scale))
+  
+  # Little trick to display the standard errors
+  table <- lapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    return(data.frame(covariate = covariate_name, 
+                      group = 1:ncol(m), 
+                      estimate = m["Estimate",], std.error = m["Std. Error",], 
+                      standardized = .standardized))
+  })
+  # table <- do.call(rbind, table)
+  table <- rbindlist(table)
+  setnames(table, "group", .ntile)
+  table[, covariate := factor(covariate, levels = rev(covariate_names[ordering]), ordered = TRUE)]
+  table[covariate %in% head(covariate_names[ordering], n_top)] %>%
+    mutate(info = paste0(estimate, "\n(", std.error, ")")) %>%
+    ggplot(aes_string(x = .ntile, y = "covariate")) +
+    # Add coloring
+    geom_raster(aes(fill = standardized)
+                , alpha = 0.9
+    ) +
+    scale_fill_distiller(palette = "RdBu",
+                         direction = 1,
+                         breaks = breaks,
+                         labels = labels,
+                         limits = color_scale,
+                         name = "Standard\nDeviation on\nNormalized\nDistribution"
+    ) +
+    # add numerics
+    geom_text(aes(label = info), size=2.1) +
+    # reformat
+    labs(title = paste0("Average covariate values within group based on quartiles of predicted probabilities"),
+         y = "within covariate") +
+    scale_x_continuous(position = "top") +
+   # scale_x_discrete(position = "top", limits=c("0","1")) +
+    theme(plot.title = element_text(size = 8, face = "bold"))
+  #cowplot::theme_minimal_hgrid(16)
+}
+
+# Now use the function to get average covariates for user subgroups by quartiles of predicted probabilities 
+train_data<-as.data.frame(cbind(X_train, features_train$retained_8wks))
+colnames(train_data)<-c(colnames(X_train),"retained_8wks")
+test_data<-as.data.frame(cbind(X_test, features_test$retained_8wks))
+colnames(test_data)<-c(colnames(X_test),"retained_8wks")
+data = rbind(train_data, test_data) %>%
+  select(-c(logit_preds, 
+            logit_probs))
+covar_names = colnames(data)[colnames(data) != "quantile_probs"]
+plot_covariate_means_by_ntile(data, 
+                              .ntile = "quantile_probs", 
+                              covar_names,
+                              n_top = 20 # <- this can be changed to any number
+)
+
+
+```
+An interesting observation from this heatmap is that half of the users in Quartile 4, the one with the highest predicted probabilities, are B2B users.
+
+#### Exercise
+**Observing the heatmaps above, what other interesting insights can you obtain for user subgroups based on quartiles of predicted probabilities and/or based on binary predicted rankings?**
+
+### Calibration Analysis for Model Diagnostics
+Let's look at the average true retention rate of users in the test set by dividing them into subgroups based on quartiles of predicted probabilities. This allows us to understand how well the predicted probabilities match the actual probabilities of remaining on the app. In our case, the actual probability of remaining on the app can be either 0 (if the user stops using the app within the first 8 weeks) or 1 (if the user remains on the app for at least the first 8 weeks).
+
+Note that we use the predicted probabilities obtained from the unregularized logistic model for this calibration analysis. You are encouraged to perform similar calibration analysis for other models.
+
+```{r}
+# Combine the X_test and y_test
+test_x_y <-as.data.frame(cbind(X_test, features_test$retained_8wks))
+colnames(test_x_y)<-c(colnames(X_test),"retained_8wks")
+
+# Get count, mean, standard deviation, standard error of the mean, and 95% confidence interval (default 95%)
+sum_retained <- summarySE(test_x_y, measurevar="retained_8wks", groupvars=c("quantile_probs"))
+
+# Plot the average retention rate for each user quartile
+ggplot(sum_retained, aes(x = quantile_probs, y = retained_8wks, fill=quantile_probs)) + 
+  geom_bar(position=position_dodge(), stat="identity") +
+  geom_errorbar(aes(ymin = retained_8wks - ci, ymax = retained_8wks + ci),
+                width=.2, position=position_dodge(.9)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Quartiles based on predicted probabilities") + 
+  ylab("Average true retention rate") + 
+  scale_fill_distiller(name="Quartiles based on predicted probabilities")
+
+``` 
+Each bar in the graph shows the average true retention rate (calculated using the dependent variable `retained_8wks`) by user subgroup. We generate the user subgroups by diving users into quartiles based on their predicted probabilities of remaining on the app after the first 8 weeks. For example, the users in Quartile 1 have the lowest predicted probabilities whereas the users in Quartile 4 have the highest predicted probabilities of remaining on the app after the first 8 weeks. The graph shows that the predicted probabilities of remaining on the app are better calibrated for users in Quartiles 3 and 4 than for users in Quartiles 1 and 2. Model predictions for users in Quartiles 3 and 4 are better calibrated because the average actual retention rate for users in these quartiles match the predicted retention probabilities, implying that a larger fraction of the users in these quartiles actually remains on the app-- just as the model predicts. As for users in Quartiles 1 and 2, the model predictions are not well-calibrated because the actual retention rates do not match the predicted retention probabilities as well. 
+
+### Exercise
+**Observe the heatmaps above and see if there is any insight you can get from the covariates of users in Quartiles 1 and 2 that could explain why the model predictions are not well-calibrated for the users in these quartiles.**
+
+## Random forest model 
+We then build a random forest model, which is another type of machine learning model used for binary classification problems. 
+
+Random Forest (RF) is a Supervised Learning algorithm that is based on the ensemble learning method and many Decision Trees. An ensemble learning model, such as Random Forest, consists of many base models, which are used to make the final model predictions more accurate than those of any individual base model. Furthermore, in RF models, all computations are performed in parallel and the Decision Tree models do not interact with each other while they are being built. To build these separate Decision Tree models, RF uses a unique subset of the initial data for every base model, which helps make the Decision Tree models (and thus, their predictions) less correlated. In addition, the RF model uses a random set of features to split each node in every Decision Tree. Hence, none of the Decision Tree models see the entire training data, which allows RF models to capture the general patterns of the data better and reduce the model sensitivity to noise. Thus, RF models reduce overfitting by using a subset of features and performing feature randomization for each Decision Tree.
+
+```{r user_engagement_rf_model}
+
+# Create the dependent variable 'retained_8wks' 
+y_train <- factor(features_train$retained_8wks)
+y_test <- factor(features_test$retained_8wks)
+
+# `max_sessions_since_signup` and `max_days_since_signup` are perfectly correlated with `exited_8wks` as we use the former to create the latter indicator variable
+X_train <- data.frame(features_train_dummies) %>% select(-c(max_sessions_since_signup, 
+                                                            max_days_since_signup, 
+                                                            child_id,
+                                                            sessions_since_signup))
+
+X_test <- data.frame(features_test_dummies) %>% select(-c(max_sessions_since_signup, 
+                                                            max_days_since_signup, 
+                                                            child_id,
+                                                          sessions_since_signup))
+
+# Create a training set dataframe as an input to the random forest model
+train_rf<-as.data.frame(cbind(X_train, y_train))
+colnames(train_rf)<-c(colnames(X_train),"retained_8wks")
+
+# Create a test set dataframe to be used after building the random forest model for performance evaluation
+test_rf<-as.data.frame(cbind(X_test, y_test))
+colnames(test_rf)<-c(colnames(X_test),"retained_8wks")
+
+# Create a formula from a string; i.e. "y~ x1 + x2 + x3" where y=y_train and X=X_train
+sumx <- paste(colnames(X_train), collapse = " + ")
+form <- paste("y_train",sumx, sep=" ~ ")
+form <- as.formula(form)
+
+# Build a random forest model to predict whether a user will churn/exit after 8 weeks
+rf_model <- randomForest(form, data = train_rf)
+```
+
+We now evaluate the performance of this random forest model using the accuracy, precision, and recall scores (among other scores) on the test set. 
+
+```{r rf_preds}
+# Predict and evaluate on training set
+rf_probs_train <- predict(rf_model, train_rf)
+rf_accuracy_train <- table(rf_probs_train, y_train)
+sum(diag(rf_accuracy_train))/sum(rf_accuracy_train)
+
+# Predict and evaluate on test set
+rf_probs_test <- predict(rf_model, test_rf, type="response")
+rf_accuracy_test <- table(rf_probs_test, y_test)
+sum(diag(rf_accuracy_test))/sum(rf_accuracy_test)
+confusionMatrix(data=factor(rf_probs_test), y_test)
+
+# preedictions passed in the evaluate() function have to be numeric values  
+rf_probs_test_ints <- as.integer(as.character(rf_probs_test))
+# create a data frame with targets and predictions
+d_binomial <- tibble("target" = y_test,
+                     "prediction" = rf_probs_test_ints)
+
+# use evaluate() function to evaluate the predictions and get the confusion matrix tibble
+eval <- evaluate(d_binomial,
+                 target_col = "target",
+                 prediction_cols = "prediction",
+                 type = "binomial")
+
+# plot the eval output that contains the confusion matrix tibble
+plot_confusion_matrix(eval$`Confusion Matrix`[[1]],
+                      add_normalized=FALSE)
+
+``` 
+
+As can be observed from the accuracy scores of the random forest model on the training set and the test set, 100% vs. 63.25%, the model performs significantly better on the training set than any of the other models. However, compared to its performance on the training set, the model performs significantly worse on its test set. In addition, the accuracy score on the test set is comparable to the accuracy scores of the other models previously built. This clearly indicates that the RF model overfits on the training set, but does not generalize well to data points outside of the training set (in this case, the test set).
+
+Using the confusion matrix, we can see that out of all the observations where Target is 1, 79.6% of them were predicted to be 1 and 20.4% were predicted to be 0. On the other hand, out of all the observations where Prediction is 1, 65.5% of them were actually 1 while 34.5% were actually 0.
+
+Similar to the general pattern observed in the unregularized logistic regression model, the random forest model is better at predicting the users who will remain active on the app after the first 8 weeks (see the column percentage in Tile 1) than predicting the users who will stop using the app within the first 8 weeks (see the column percentage in Tile 4). In addition, although the accuracy scores of the logistic and RF models are very similar (62.95% vs. 63.33%, respectively) on a relative basis, the RF model is better at predicting the users who will stop using the app within the first 8 weeks and the logistic model is better at predicting the users who will remain active on the app after the first 8 weeks.
+
+We can observe that the model is better at identifying the users who will remain active on the app after the first 8 weeks (see the column percentage in Tile 1) rather than identifying the users who will stop using the app within the first 8 weeks (see the column percentage in Tile 4). One possible explanation for this is that the dataset the model is trained on is unbalanced. As can be observed from the confusion matrix for the training set above, there are 1,114 users who remain on the app after the first 8 weeks and 675 users who stop using the app within the first 8 weeks in the training set. 
+
+Similar to the overall pattern observed in the logistic regression model, we can observe that, overall, the random forest model is better at identifying the users who will remain active on the app after the first 8 weeks (see the column percentage in Tile 1) rather than identifying the users who will stop using the app within the first 8 weeks (see the column percentage in Tile 4).
+
+In addition, although the accuracy scores of the logistic and RF model are very similar (62.95% vs. 63.33%, respectively), on a relative basis, the RF model is better at identifying the users who actually stopped using the app within the first 8 weeks and the logistic model is better at identifying the users who actually remain active on the app after the first 8 weeks.
+
+### Exercise
+
+**Use the confusion matrices of both models to derive other result interpretations and try to come up with potential explanations about your observations.**
+
+**Discuss with your team and decide which metric you will use to select the best model and why.** 
+
+**Now that we have guided you through the steps of building a baseline model using 2 different ML algorithms in order to predict whether a user will remain engaged on the app after the first 8 weeks, you can try to build your own model using a different ML algorithm or using different input variables and/or dependent variable or you can try to improve upon the models we have provided you with.**
+
