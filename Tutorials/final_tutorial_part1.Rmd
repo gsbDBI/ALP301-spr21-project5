@@ -1,7 +1,7 @@
 
 ---
 title: 'Stones2Milestones Path Analysis Project: Answering Business Questions with Data'
-author: "YOUR NAME"
+author: "Muhammad Ahmed Chaudhry"
 date: "April 2021"
 output:
   html_document:
