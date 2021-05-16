@@ -1,7 +1,7 @@
 ---
 title: 'Stones2Milestones Path Analysis Project: Answering Business Questions with Data'
-author: "YOUR NAME"
-date: "April 2021"
+author: "Chaudhry, Cordero, Kulkarni, Ng"
+date: "May 2021"
 output:
   html_document:
     code_folding: hide
@@ -446,6 +446,7 @@ fviz_nbclust(clustering_df, kmeans, method = "silhouette")
 ```
 
 ### Exercise
+# Exercise 1
 
 **Change the input features (i.e. input variables) used to build the k-means clustering model and investigate the new clusters. How do these clusters differ from the ones we have obtained from the k-means model above?**
 
@@ -637,7 +638,10 @@ For the k-means clusters with `k=4`, Cluster 2 is the cluster with the highest v
 Furthermore, the k-means user clusters have high differences in average covariate values across clusters whereas the user cohorts by tenure type have significantly smaller differences in average covariate values across cohorts. Intuitively, this observation makes sense because we used various initial behavioral characteristics to generate user clusters with k-means whereas for the tenure-based cohorts we only used a fixed characteristics (i.e. maximum day on the app since signup) without considering any behavioral characteristics. 
 
 ### Exercise
+# Exercise 2
 **Do you observe any other interesting patterns or trends in the heatmap above?**
+
+# REVIEW SINCE IT DOESN'T MATCH THE HEATMAP
 
 ## Analyzing the fixed characteristics of user clusters obtained from the k-means clustering
 Now let's analyze the fixed characteristics of users in each cluster and compare these characteristics to those of the users in cohorts created by tenure type. Also, note that the assignment of users to clusters is independent of their fixed characteristics (at least directly) because we did not use these characteristics to build the features for the k-means models.
@@ -777,6 +781,7 @@ The plot in the second row represents the proportion of users by acquisition met
 Interestingly, the proportion of users by acquisition method is very similar across clusters for the k-means clusters, both when `k=3` and `k=4`. As for the cohorts by tenure type, the proportions of b2b users who are classified as medium- and long-term users are higher than the proportions of users by other acquisition methods, which is what we observed in the previous tutorials as well.
 
 ### Exercise
+# Exercise 3
 **Perform similar analysis using other fixed characteristics for user subgroups. Are there any interesting patterns or trends?** 
 
 **Compare the k-means user clusters to other user subgroups in addition to the user cohorts by tenure type. How do they differ? Can you obtain any interesting findings from these user subgroup comparisons?**
@@ -798,8 +803,11 @@ We pick n to be 6 (sessions) because in the last tutorial, we observed that the 
 We pick x to be 8 (weeks) by taking into account the fact that the user-story interactions data is from May 1, 2020 to February 1, 2020. Otherwise, if we were to pick a much higher x, we might end up shrinking our sample size non-trivially.
 
 ### Exercise
+# Exercise 4
 
 **Pick different n, m, and x values and investigate the predictive performance of the ML models with these new parameters.**
+
+
 
 We begin by filtering out users in our dataframes who have signed up on the app on or after December 1st, 2020. Otherwise, we cannot observe whether they remained active on the app after 8 weeks as we do not have activity data on or after February 1st, 2021. As in previous tutorials, you might need to modify this filtering logic based on the question that you are trying to answer.
 
@@ -1085,7 +1093,10 @@ features_df[ , categorical] <- lapply(features_df[ ,categorical] , factor)
 
 Note that we have also converted these features based on users' fixed characteristics (i.e. grade level and acquisition method) into categorical variables. It is important to do so such that the model does not attempt to interpret the categories of these variables as numerical values. In other words, if grade 1=1 and grade5=5, there is no meaningful increase in the value of `grade`, we just use different numerical values to distinguish between these two grade levels. We could have assigned grade1=5 and grade5=1 and it should not change how these two categories of grade level affect the model predictions.
 
+
+
 ### Exercise
+# Exercise 5
 
 **You are highly encouraged to brainstorm and engineer other features that could improve the model's predictive performance. If you do so, add those features to the model and investigate how they affect the performance.**
 
@@ -1154,6 +1165,7 @@ features_test_dummies = predict(dummies, newdata = features_test[,cols_reg])
 In this tutorial, we build a machine learning model to predict a user's engagement after the first 8 weeks on the app. However, since `x (first 8 weeks)` was chosen somewhat arbitrarily, you are highly encouraged to modify this variable and investigate the model performance.
 
 **Exercise: You might consider building other types of models, using more sophisticated approaches to pick the input features for the models, and/or using similar techniques to what you have done in your individual ML assignment in order to fine-tune the model parameters.** 
+# Exercise 6
 
 ## Logistic regression model
 
@@ -1325,6 +1337,7 @@ By regularizing the model coefficients, we get an accuracy score of ~59.62%, whi
 Furthermore, we observe that the lasso logistic model is better than the unregularized logistic model at identifying the users who will stop using the app within their first 8 weeks (i.e. `target=0` and `prediction=0` column percentage increases from 22.4% to 77.6%). However, it is worse at identifying the users who will remain active on the app after the first 8 weeks (i.e. `target=1` and `prediction=1` column percentage decreases from 85.8% to 49.5%). It is up to you as the analyst to determine the main goal(s) of building a predictive model and decide what metrics to optimize accordingly, which can involve trade-offs between different performance metrics.
 
 ### Exercise
+# Exercise 7
 
 **Think about potential approaches you could take to improve the model performance. I.e. you could balance the dataset (see some techniques outlined [here](https://elitedatascience.com/imbalanced-classes)) or redefine the question we introduced at the beginning of this section that motivated our process of building predictive models.**
 
@@ -1550,7 +1563,11 @@ plot_covariate_means_by_ntile(data,
 An interesting observation from this heatmap is that half of the users in Quartile 4, the one with the highest predicted probabilities, are B2B users.
 
 #### Exercise
+# Exercise 8
+
 **Observing the heatmaps above, what other interesting insights can you obtain for user subgroups based on quartiles of predicted probabilities and/or based on binary predicted rankings?**
+
+
 
 ### Calibration Analysis for Model Diagnostics
 Let's look at the average true retention rate of users in the test set by dividing them into subgroups based on quartiles of predicted probabilities. This allows us to understand how well the predicted probabilities match the actual probabilities of remaining on the app. In our case, the actual probability of remaining on the app can be either 0 (if the user stops using the app within the first 8 weeks) or 1 (if the user remains on the app for at least the first 8 weeks).
@@ -1579,6 +1596,7 @@ ggplot(sum_retained, aes(x = quantile_probs, y = retained_8wks, fill=quantile_pr
 Each bar in the graph shows the average true retention rate (calculated using the dependent variable `retained_8wks`) by user subgroup. We generate the user subgroups by diving users into quartiles based on their predicted probabilities of remaining on the app after the first 8 weeks. For example, the users in Quartile 1 have the lowest predicted probabilities whereas the users in Quartile 4 have the highest predicted probabilities of remaining on the app after the first 8 weeks. The graph shows that the predicted probabilities of remaining on the app are better calibrated for users in Quartiles 3 and 4 than for users in Quartiles 1 and 2. Model predictions for users in Quartiles 3 and 4 are better calibrated because the average actual retention rate for users in these quartiles match the predicted retention probabilities, implying that a larger fraction of the users in these quartiles actually remains on the app-- just as the model predicts. As for users in Quartiles 1 and 2, the model predictions are not well-calibrated because the actual retention rates do not match the predicted retention probabilities as well. 
 
 ### Exercise
+# Exercise 9
 **Observe the heatmaps above and see if there is any insight you can get from the covariates of users in Quartiles 1 and 2 that could explain why the model predictions are not well-calibrated for the users in these quartiles.**
 
 ## Random forest model 
@@ -1667,6 +1685,7 @@ In addition, although the accuracy scores of the logistic and RF model are very 
 ### Exercise
 
 **Use the confusion matrices of both models to derive other result interpretations and try to come up with potential explanations about your observations.**
+# Exercise 10
 
 **Discuss with your team and decide which metric you will use to select the best model and why.** 
 
