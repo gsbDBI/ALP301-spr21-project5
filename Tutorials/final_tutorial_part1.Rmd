@@ -98,6 +98,12 @@ child_map <- read.csv(file='Datasets/child_mapping.csv')
 
 ```
 
+```{r}
+logged_df_2<-logged_df
+```
+
+
+
 ```{r merge_process_data}
 # Merge the user data with the user id mapping data to get each user's id of an integer type
 child_df <- left_join(x = child_df, y = child_map %>%
@@ -119,7 +125,7 @@ logged_df$days_since_signup <- logged_df$story_viewed_ts - logged_df$created_at
 # Rename child id codes (integer values) as child id (string values) as the 
 # integer-valued child ids are easier to use for our analysis
 logged_df <- logged_df %>% 
-  rename(child_id_code = child_id, child_id = child_id_code)
+  dplyr::rename('child_id_code' = child_id, 'child_id' = child_id_code)
 
 # Define a session in terms of a weekly session
 logged_df$sessions_since_signup = floor(logged_df$days_since_signup/7)
@@ -318,7 +324,7 @@ stories_per_week = stories_per_week %>%
 
 # Get only the first six weeks of data
 first_six_weeks = stories_per_week %>%
-  dplyr::filter(weeks_retained < 7)
+  dplyr::filter(weeks_retained < 7) #edit here 
 
 # Calculate proportion of users retain by weeks since first signup
 # by sign-up date
@@ -342,6 +348,7 @@ ggplot(retention_df_frst_six_weeks_by_signup_date %>%
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective cohort, in which a cohort is defined by the user's sign-up month. Note that each line is always declining because the number of users retained each week is a subset of the users retained in the prior week. Intuitively, this makes sense because for any given week, we can have at most all the users who were retained from the previous week (i.e. no users drop out in that week). This figure shows that 80 to 90% of users are retained after the first week, but that this figure steadily declines over time. There is a notable sharper decline for May, October, and November compared to other months from week 1 to week 2.
 
 **Exercise**
+# Exercise 1
 *To see how if retention rates differ based on other user fixed characteristics, create the same graph, but split users by 1) grade-level, and 2) B2B, B2C, instead of by cohort. In other words, the x-axis and y-axis should remain the same, but the lines on each graph should correspond to grade-level or user acquisition method instead of cohort.*
 
 To understand how users' initial usage of the app relates to their retention rates, we next graph the proportion of users retained week over week by quartile of initial app usage. That is, we split all users into four groups based on how many stories they view during their first week. Those with usage at the 25$^{th}$ percentile or lower (i.e. 25% of users view that number of stories or fewer) are in group 1 or the first quartile; those with usage at the 26$^{th}$ to 50$^{th}$ percentile are in group 2 or the second quartile; etc. Note that since our usage variable is discrete, the cut-offs for each quartile are rounded up.
@@ -380,6 +387,7 @@ ggplot(retention_df_frst_six_weeks_by_num_stories_frst_week %>%
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective quartile. Again, note that each line is always declining. This figure shows that, while there are similar rates of decline for each quartile, app usage in the first week predicts the rate of drop-out in the first week. That is, users who view more stories in the first week have higher retention rates in week 2, but thereafter lose users at the same rate as other quartiles.
 
 **Exercise**
+# Exercise 2
 *Shift the analysis out a week. Does app usage in the second week predict retention rates in week 3? Create the same graph, but base the quartiles on the number of stories the user views in their second week, and look at retention rates for weeks 3 through 8. Do you view similar patterns?*
 
 # How does app usage differ for short- versus long-term users?
