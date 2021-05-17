@@ -98,10 +98,6 @@ child_map <- read.csv(file='Datasets/child_mapping.csv')
 
 ```
 
-```{r}
-logged_df_2<-logged_df
-```
-
 
 
 ```{r merge_process_data}
@@ -343,11 +339,64 @@ ggplot(retention_df_frst_six_weeks_by_signup_date %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
+ggsave("signups.jpg")
 ```
 
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective cohort, in which a cohort is defined by the user's sign-up month. Note that each line is always declining because the number of users retained each week is a subset of the users retained in the prior week. Intuitively, this makes sense because for any given week, we can have at most all the users who were retained from the previous week (i.e. no users drop out in that week). This figure shows that 80 to 90% of users are retained after the first week, but that this figure steadily declines over time. There is a notable sharper decline for May, October, and November compared to other months from week 1 to week 2.
 
 **Exercise**
+
+```{r}
+# Get only the first ten weeks of data
+first_ten_weeks = stories_per_week %>%
+  dplyr::filter(weeks_retained < 11) 
+
+# Calculate proportion of users retain by weeks since first signup
+# by sign-up date
+retention_df_frst_ten_weeks_by_signup_date = first_ten_weeks %>%
+  group_by(weeks_retained, created_at_year_month) %>%
+  summarize(num_users = mean(retained_user))
+
+# Plot retention curves
+ggplot(retention_df_frst_ten_weeks_by_signup_date %>%
+         dplyr::filter(created_at_year_month < "20-12", weeks_retained > 0)) +
+  geom_line(aes(x = weeks_retained, y = num_users, color = created_at_year_month)) +
+  scale_x_continuous(breaks=seq(1, 10)) +
+  xlab("Weeks since first activity") + 
+  ylab("Proportion of Retained Users")  +
+  labs(color = "Cohort: sign-up month") + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+ggsave('extended_plot.jpg')
+```
+
+```{r}
+# Get the max weeks of data
+first_max_weeks = stories_per_week %>%
+  dplyr::filter(weeks_retained < max(weeks_retained))  
+
+# Calculate proportion of users retain by weeks since first signup
+# by sign-up date
+retention_df_frst_max_weeks_by_signup_date = first_max_weeks %>%
+  group_by(weeks_retained, created_at_year_month) %>%
+  summarize(num_users = mean(retained_user))
+
+# Plot retention curves
+ggplot(retention_df_frst_max_weeks_by_signup_date %>%
+         dplyr::filter(created_at_year_month < "20-12", weeks_retained > 0)) +
+  geom_line(aes(x = weeks_retained, y = num_users, color = created_at_year_month)) +
+  scale_x_continuous(breaks=seq(1, as.integer(max(stories_per_week$weeks_retained)),by=3)) +
+  xlab("Weeks since first activity") + 
+  ylab("Proportion of Retained Users")  +
+  labs(color = "Cohort: sign-up month") + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+ggsave('extended_plot_max.jpg')
+```
+
+
 # Exercise 1
 *To see how if retention rates differ based on other user fixed characteristics, create the same graph, but split users by 1) grade-level, and 2) B2B, B2C, instead of by cohort. In other words, the x-axis and y-axis should remain the same, but the lines on each graph should correspond to grade-level or user acquisition method instead of cohort.*
 
@@ -382,9 +431,44 @@ ggplot(retention_df_frst_six_weeks_by_num_stories_frst_week %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
+ggsave("quartiles.jpg")
 ```
 
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective quartile. Again, note that each line is always declining. This figure shows that, while there are similar rates of decline for each quartile, app usage in the first week predicts the rate of drop-out in the first week. That is, users who view more stories in the first week have higher retention rates in week 2, but thereafter lose users at the same rate as other quartiles.
+
+
+```{r prop_user_retention_by_quartiles_maxwks}
+# Get the number of stories read in the first week of being active on app
+num_stories_first_week_max = first_max_weeks %>%
+  dplyr::filter(weeks_retained == 0)
+
+# Split the users into 4 quartiles based on the number of stories during their first week of app use
+num_stories_first_week_max$n_stories_quartile_cohort = factor(ntile(num_stories_first_week_max$num_stories, n=4)) 
+
+# Add the quartile label to the first_six_weeks dataframe
+first_max_weeks = left_join(first_max_weeks, num_stories_first_week_max %>% select(child_id, n_stories_quartile_cohort),
+          by = "child_id")
+
+# Calculate proportion of users retain by weeks since first signup
+# by quartile
+retention_df_frst_max_weeks_by_num_stories_frst_week_max = first_max_weeks %>%
+  group_by(weeks_retained, n_stories_quartile_cohort) %>%
+  summarize(num_users = mean(retained_user))
+
+# Plot retention curves
+ggplot(retention_df_frst_max_weeks_by_num_stories_frst_week_max %>%
+         dplyr::filter(weeks_retained > 0)) +
+  geom_line(aes(x = weeks_retained, y = num_users, color = n_stories_quartile_cohort)) +
+  scale_x_continuous(breaks=seq(1, as.integer(max(stories_per_week$weeks_retained)),3)) + 
+  xlab("Weeks since first activity") + 
+  ylab("Proportion of Retained Users")  +
+  labs(color = "Cohort: number of stories \n in first week quartile") + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+ggsave("quartile_max.jpg")
+```
+
 
 **Exercise**
 # Exercise 2
