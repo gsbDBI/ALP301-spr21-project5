@@ -452,6 +452,262 @@ fviz_nbclust(clustering_df, kmeans, method = "silhouette")
 
 **Change the input features (i.e. input variables) used to build the k-means clustering model and investigate the new clusters. How do these clusters differ from the ones we have obtained from the k-means model above?**
 
+```{r first_4wks_feature_engineering_clustering}
+# total number of stories in first three weekly sessions
+tot_num_stories_first4wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first4wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first4wkly_session %>%
+                        select(child_id, n_stories_first4wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first three weekly sessions
+tot_num_stories_first4wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first4wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first4wkly_sessions = mean(n_stories_first4wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first4wkly_session %>%
+                        select(child_id, avg_n_stories_first4wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first three weeks
+avg_num_stories_daily_session_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first4wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first4wks = mean(n_stories_first4wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first4wks %>%
+                        select(child_id, avg_n_stories_first4wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first three weeks
+num_daily_sessions_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first4wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first4wks %>%
+                        select(child_id, n_sessions_first4wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first three weeks
+num_unique_stories_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first4wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first4wks %>%
+                        select(child_id, unique_stories_first4wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 3 weeks
+num_unique_sources_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first4wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first4wks %>%
+                        select(child_id, unique_sources_first4wks), 
+                      by = 'child_id')
+
+# clustering_features_df <- clustering_features_df %>% select(-c(sessions_since_signup))
+```
+
+```{r first_5wks_feature_engineering_clustering}
+# total number of stories in first three weekly sessions
+tot_num_stories_first5wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first5wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first5wkly_session %>%
+                        select(child_id, n_stories_first5wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first three weekly sessions
+tot_num_stories_first5wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first5wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first5wkly_sessions = mean(n_stories_first5wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first5wkly_session %>%
+                        select(child_id, avg_n_stories_first5wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first three weeks
+avg_num_stories_daily_session_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first5wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first5wks = mean(n_stories_first5wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first5wks %>%
+                        select(child_id, avg_n_stories_first5wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first three weeks
+num_daily_sessions_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first5wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first5wks %>%
+                        select(child_id, n_sessions_first5wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first three weeks
+num_unique_stories_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first5wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first5wks %>%
+                        select(child_id, unique_stories_first5wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 3 weeks
+num_unique_sources_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first5wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first5wks %>%
+                        select(child_id, unique_sources_first5wks), 
+                      by = 'child_id')
+
+# clustering_features_df <- clustering_features_df %>% select(-c(sessions_since_signup))
+```
+
+```{r first_6wks_feature_engineering_clustering}
+# total number of stories in first three weekly sessions
+tot_num_stories_first6wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first6wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first6wkly_session %>%
+                        select(child_id, n_stories_first6wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first three weekly sessions
+tot_num_stories_first6wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first6wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first6wkly_sessions = mean(n_stories_first6wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first6wkly_session %>%
+                        select(child_id, avg_n_stories_first6wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first three weeks
+avg_num_stories_daily_session_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first6wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first6wks = mean(n_stories_first6wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first6wks %>%
+                        select(child_id, avg_n_stories_first6wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first three weeks
+num_daily_sessions_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first6wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first6wks %>%
+                        select(child_id, n_sessions_first6wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first three weeks
+num_unique_stories_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first6wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first6wks %>%
+                        select(child_id, unique_stories_first6wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 3 weeks
+num_unique_sources_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first6wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first6wks %>%
+                        select(child_id, unique_sources_first6wks), 
+                      by = 'child_id')
+
+# clustering_features_df <- clustering_features_df %>% select(-c(sessions_since_signup))
+```
+
+```{r separating_datasets_with_new_variables}
+
+clustering_features_df_added<-clustering_features_df
+clustering_features_df<-clustering_features_df[,-c(18:36)]
+```
+
+```{r preprocess_clustering_data_new}
+# Print a random row to ensure it is an observation and that each corresp. column of that row is a feature
+print(clustering_features_df_added[15, ])
+
+# Ensure we removed all missing values from the data
+print(sum(is.na(clustering_features_df_added)))
+
+# Standardize the features used for clustering -- ensure child_id is not preprocessed
+clustering_df_added <- clustering_features_df_added %>% ungroup()
+vars<-clustering_df_added %>% select(-c(child_id))
+vars<-c(colnames(vars))
+pre_proc_val <- preProcess(clustering_df_added[,vars], method = c("center", "scale"))
+clustering_df_added[,vars] = predict(pre_proc_val, clustering_df_added[,vars])
+rownames(clustering_df_added) <- clustering_df_added$child_id
+clustering_df_added$child_id <- NULL 
+```
+
+```{r k3_means_users_new}
+# Perform k-means clustering with k=3
+k3_new <- kmeans(clustering_df_added, centers = 3, nstart = 25)
+str(k3_new)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+fviz_cluster(k3_new, clustering_df_added)
+``` 
+
+
+
 **In addition, vary the number of clusters generated by changing the k parameters in the k-means model. Observing the user clusters obtained using different k values, are there are any interesting patterns or results?** 
 
 
