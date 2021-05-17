@@ -1,8 +1,8 @@
 
 ---
 title: 'Stones2Milestones Path Analysis Project: Answering Business Questions with Data'
-author: "Muhammad Ahmed Chaudhry"
-date: "April 2021"
+author: "Chaudhry, Cordero, Kulkarni, Ng"
+date: "May 2021"
 output:
   html_document:
     code_folding: hide
@@ -345,6 +345,7 @@ ggsave("signups.jpg")
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective cohort, in which a cohort is defined by the user's sign-up month. Note that each line is always declining because the number of users retained each week is a subset of the users retained in the prior week. Intuitively, this makes sense because for any given week, we can have at most all the users who were retained from the previous week (i.e. no users drop out in that week). This figure shows that 80 to 90% of users are retained after the first week, but that this figure steadily declines over time. There is a notable sharper decline for May, October, and November compared to other months from week 1 to week 2.
 
 **Exercise**
+<<<<<<< HEAD
 
 ```{r}
 # Get only the first ten weeks of data
@@ -397,6 +398,8 @@ ggsave('extended_plot_max.jpg')
 ```
 
 
+=======
+>>>>>>> 13facd57538ed902adb9be0f41e0715df8f4bdc0
 # Exercise 1
 *To see how if retention rates differ based on other user fixed characteristics, create the same graph, but split users by 1) grade-level, and 2) B2B, B2C, instead of by cohort. In other words, the x-axis and y-axis should remain the same, but the lines on each graph should correspond to grade-level or user acquisition method instead of cohort.*
 
@@ -474,6 +477,37 @@ ggsave("quartile_max.jpg")
 # Exercise 2
 *Shift the analysis out a week. Does app usage in the second week predict retention rates in week 3? Create the same graph, but base the quartiles on the number of stories the user views in their second week, and look at retention rates for weeks 3 through 8. Do you view similar patterns?*
 
+```{r prop_user_retention_by_quartiles_six6ks}
+# Get the number of stories read in the first week of being active on app
+num_stories_first_week = first_six_weeks %>%
+  dplyr::filter(weeks_retained == 1)
+
+# Split the users into 4 quartiles based on the number of stories during their first week of app use
+num_stories_first_week$n_stories_quartile_cohort = factor(ntile(num_stories_first_week$num_stories, n=4)) 
+
+# Add the quartile label to the first_six_weeks dataframe
+first_six_weeks = left_join(first_six_weeks, num_stories_first_week %>% select(child_id, n_stories_quartile_cohort),
+          by = "child_id")
+
+# Calculate proportion of users retain by weeks since first signup
+# by quartile
+retention_df_frst_six_weeks_by_num_stories_frst_week = first_six_weeks %>%
+  group_by(weeks_retained, n_stories_quartile_cohort) %>%
+  summarize(num_users = mean(retained_user))
+
+# Plot retention curves
+ggplot(retention_df_frst_six_weeks_by_num_stories_frst_week %>%
+         dplyr::filter(weeks_retained > 0)) +
+  geom_line(aes(x = weeks_retained, y = num_users, color = n_stories_quartile_cohort)) +
+  scale_x_continuous(breaks=seq(1, 6)) + 
+  xlab("Weeks since activity in week 2") + 
+  ylab("Proportion of Retained Users")  +
+  labs(color = "Cohort: number of stories \n in second week quartile") + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+```
+
 # How does app usage differ for short- versus long-term users?
 
 Another way to consider user retention is to compare app usage for users that are retained versus those who drop-out. This type of analysis is helpful for two reasons. First, it is a first step towards predicting which users will become long-term users (this prediction analysis will be addressed more explicitly in the next tutorial). Second, and more importantly here, this analysis provides suggestions for what time of app usage S2M should encourage. S2M can make recommendations on app usage through its relationships with schools or, more directly, through nudges on the app. Knowing what kind of usage is more typical for retained versus drop-out users is a first step towards choosing what recommendations to make. Note that we cannot say that the type of usage we observe in retained users leads to/causes more long-term usage---the correlation could be driven entirely by selection (users who choose that type of app usage are also more likely to use the app long-term)---but it does provide a helpful starting place for policies to test in future.
@@ -539,10 +573,35 @@ ggplot(users_compo_frst_six_week_active_days) +
 Each line in the graph shows the average number of active days per week over the first six weeks of app usage, conditional on a user having one active day that week, for short- and long-term users in their respective line. The figure shows a similar pattern in active days per week as the figure above showing stories per daily session. Short-term users are active for fewer days in all weeks compared to long-term users, with a large drop in the second week, but both short- and long-term users have a decreasing number of active days over time. Remember that for both of the above figures showing quantity of app usage over time, we consider only users who are active in each week for the data point in each week. So, the sharp decline in the second week for short-term users could be due either to a large change in usage *or* users with greater usage dropping out.
 
 **Exercise**
+# Exercise 3
 *Replicate one of the above graphs, but use the same sample of users for weeks 1 and 2. In other words, check if the decline from week 1 to week 2 is due to users with higher usage dropping out or due to changes in short-term users' app usage.*
 
 **Exercise**
+# Exercise 4 
 *The previous two graphs assess the quantity of app usage for short- versus long-term users. What other measures would be useful to quantify app usage? Replicate one of the graphs above with a different measure to quantify app usage. (Hint: one example could be the maximum usage streak, or number of active days in a row, in a week.)*
+
+```{r avg_active_days_weekly_6wks}
+# Average number of active days week over week in first 6 weeks since signup
+users_compo_frst_six_week_active_days <- filtered_logged_df_may_nov %>%
+  dplyr::filter(sessions_since_signup <= 5) %>% # note: first week of signup is 0 
+  select(child_id, skipped_stories_count, sessions_since_signup, tenure_type) %>%
+  group_by(child_id, sessions_since_signup, tenure_type) %>%
+  summarize(n_active_days = n_distinct(skipped_stories_count)) %>%
+  group_by(sessions_since_signup, tenure_type) %>%
+  summarize(n_active_days = mean(n_active_days))
+
+# Plot the average number of active days week over week in the first six weeks by user tenure
+ggplot(users_compo_frst_six_week_active_days) + 
+  geom_line(aes(x=sessions_since_signup ,y=n_active_days, col = tenure_type)) +
+  mdthemes::md_theme_solarized() +
+  xlab("Week Since Signup") +
+  ylab("Average Number of Skipped Stories in a Week") +
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  scale_colour_discrete("Tenure Type")
+```
 
 Instead of looking at quantity of app usage, we now consider diversity in app usage. The figure below shows a diversity index created by dividing the number of unique story types viewed by a user in a week by the total number of stories viewed by that user in a week. The diversity index for each user is then averaged over all short- and long-term users separately each week. We restrict our sample each week to users who view more than 1 story in a week, treating other users as missing for a similar reason to the one described for the above graphs. We also treat users who view just one story as missing in this graph because their proportion of unique story types would be trivially equal to one.
 
@@ -602,6 +661,7 @@ Each line in the graph shows the proportion of unique story types over the first
 It is also important to note that generally, diversity measures can be challenging to interpret when they are calculated using very small sample sizes. In this case, computing the diversity index using only one week of user-story interactions could be too short, so you should compute and investigate this measure using longer time periods instead (i.e. using the number of stories viewed by each user for 3-week periods).
 
 **Exercise**
+# Exercise 5
 *Consider a similar analysis for the number of app sections from which users choose stories to view. Note that the much lower number of app sections compared to the number of story types means that a different (and simpler) measure would likely be more useful than the diversity index created above.*
 
 # What stories/app sections are associated with greater user engagement?
@@ -663,6 +723,7 @@ ggplot(story_type_df,
 Each bar in the graph shows the probability that a user views another story after viewing its respective story type. The figure shows that users who have viewed one recommended story after completing a story are the most likely to continue to view another story, suggesting that the recommended stories on completion are an important tool for user engagement. On the hand, recall that the most viewed story types from the first tutorial were "Today for You", "Top Story", "Trending Now", and "New Release." These stories are also the least likely to lead to viewing an additional story. 
 
 **Exercise**
+# Exercise 6
 *Replicate the above graph using the probability that a user chooses to view another story OF THE SAME TYPE. Consider why this measure might be better for understanding what type of app content keeps user engaged.*
 
 In the last graph, we break down all stories viewed by story type for quartiles of users based on total number of stories viewed in the first month, conditional on the user being active at least 30 days after initial app usage. The figure below shows the proportion of total views for each story type (i.e. $\frac{\text{# of story type views for quartile } x}{\text{total # of story views for quartile } x}$). 
@@ -753,8 +814,10 @@ Each bar in the graph shows the proportion of views for each story type for its 
 
 
 **Exercise**
+# Exercise 7
 *Replicate the graph above for app sections instead of story type.*
 
 **Exercise**
+# Exercise 8
 *Replicate the graph above, but divide users into quartiles based on a different usage measure. Consider what usage measure would be helpful to understand which story types promote user engagement.*
 

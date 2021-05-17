@@ -1,7 +1,9 @@
 ---
 title: 'Stones2Milestones Path Analysis Project: Answering Business Questions with Data'
-author: "Muhammad Ahmed Chaudhry"
-date: "April 2021"
+
+author: "Chaudhry, Cordero, Kulkarni, Ng"
+date: "May 2021"
+
 output:
   html_document:
     code_folding: hide
@@ -648,6 +650,8 @@ Furthermore, the k-means user clusters have high differences in average covariat
 # Exercise 2
 **Do you observe any other interesting patterns or trends in the heatmap above?**
 
+# REVIEW SINCE IT DOESN'T MATCH THE HEATMAP
+
 ## Analyzing the fixed characteristics of user clusters obtained from the k-means clustering
 Now let's analyze the fixed characteristics of users in each cluster and compare these characteristics to those of the users in cohorts created by tenure type. Also, note that the assignment of users to clusters is independent of their fixed characteristics (at least directly) because we did not use these characteristics to build the features for the k-means models.
 
@@ -811,6 +815,8 @@ We pick x to be 8 (weeks) by taking into account the fact that the user-story in
 # Exercise 4
 
 **Pick different n, m, and x values and investigate the predictive performance of the ML models with these new parameters.**
+
+
 
 We begin by filtering out users in our dataframes who have signed up on the app on or after December 1st, 2020. Otherwise, we cannot observe whether they remained active on the app after 8 weeks as we do not have activity data on or after February 1st, 2021. As in previous tutorials, you might need to modify this filtering logic based on the question that you are trying to answer.
 
@@ -1096,8 +1102,11 @@ features_df[ , categorical] <- lapply(features_df[ ,categorical] , factor)
 
 Note that we have also converted these features based on users' fixed characteristics (i.e. grade level and acquisition method) into categorical variables. It is important to do so such that the model does not attempt to interpret the categories of these variables as numerical values. In other words, if grade 1=1 and grade5=5, there is no meaningful increase in the value of `grade`, we just use different numerical values to distinguish between these two grade levels. We could have assigned grade1=5 and grade5=1 and it should not change how these two categories of grade level affect the model predictions.
 
+
+
 ### Exercise
 # Exercise 5
+
 **You are highly encouraged to brainstorm and engineer other features that could improve the model's predictive performance. If you do so, add those features to the model and investigate how they affect the performance.**
 
 ## Preprocessing Features  
@@ -1566,6 +1575,8 @@ An interesting observation from this heatmap is that half of the users in Quarti
 # Exercise 8
 **Observing the heatmaps above, what other interesting insights can you obtain for user subgroups based on quartiles of predicted probabilities and/or based on binary predicted rankings?**
 
+
+
 ### Calibration Analysis for Model Diagnostics
 Let's look at the average true retention rate of users in the test set by dividing them into subgroups based on quartiles of predicted probabilities. This allows us to understand how well the predicted probabilities match the actual probabilities of remaining on the app. In our case, the actual probability of remaining on the app can be either 0 (if the user stops using the app within the first 8 weeks) or 1 (if the user remains on the app for at least the first 8 weeks).
 
@@ -1683,6 +1694,7 @@ In addition, although the accuracy scores of the logistic and RF model are very 
 # Exercise 10
 
 **Use the confusion matrices of both models to derive other result interpretations and try to come up with potential explanations about your observations.**
+# Exercise 10
 
 **Discuss with your team and decide which metric you will use to select the best model and why.** 
 
