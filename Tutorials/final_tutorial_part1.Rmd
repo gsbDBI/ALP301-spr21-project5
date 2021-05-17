@@ -345,7 +345,7 @@ ggsave("signups.jpg")
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective cohort, in which a cohort is defined by the user's sign-up month. Note that each line is always declining because the number of users retained each week is a subset of the users retained in the prior week. Intuitively, this makes sense because for any given week, we can have at most all the users who were retained from the previous week (i.e. no users drop out in that week). This figure shows that 80 to 90% of users are retained after the first week, but that this figure steadily declines over time. There is a notable sharper decline for May, October, and November compared to other months from week 1 to week 2.
 
 **Exercise**
-<<<<<<< HEAD
+
 
 ```{r}
 # Get only the first ten weeks of data
@@ -398,8 +398,6 @@ ggsave('extended_plot_max.jpg')
 ```
 
 
-=======
->>>>>>> 13facd57538ed902adb9be0f41e0715df8f4bdc0
 # Exercise 1
 *To see how if retention rates differ based on other user fixed characteristics, create the same graph, but split users by 1) grade-level, and 2) B2B, B2C, instead of by cohort. In other words, the x-axis and y-axis should remain the same, but the lines on each graph should correspond to grade-level or user acquisition method instead of cohort.*
 
