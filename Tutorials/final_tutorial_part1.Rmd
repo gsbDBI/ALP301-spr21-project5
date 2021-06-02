@@ -401,6 +401,61 @@ ggsave('extended_plot_max.jpg')
 # Exercise 1
 *To see how if retention rates differ based on other user fixed characteristics, create the same graph, but split users by 1) grade-level, and 2) B2B, B2C, instead of by cohort. In other words, the x-axis and y-axis should remain the same, but the lines on each graph should correspond to grade-level or user acquisition method instead of cohort.*
 
+```{r b2c/b2b_retention}
+
+
+# Getting grade and acquisition channel information 
+b2_grade<-filtered_child_df %>% 
+  select(child_id, user, grade)
+
+first_six_weeks_b2_grade<-first_six_weeks %>% 
+  left_join(b2_grade, by="child_id")
+
+# Calculate proportion of users retain by weeks since first signup
+# by user-acquisition method
+retention_df_frst_six_weeks_by_b2 = first_six_weeks_b2_grade %>%
+  group_by(weeks_retained, user) %>%
+  summarize(num_users = mean(retained_user))
+
+# Plot retention curves
+ggplot(retention_df_frst_six_weeks_by_b2 %>%
+         dplyr::filter(weeks_retained > 0)) +
+  geom_line(aes(x = weeks_retained, y = num_users, color = user)) +
+  scale_x_continuous(breaks=seq(1, 6)) +
+  xlab("Weeks since first activity") + 
+  ylab("Proportion of Retained Users")  +
+  labs(color = "Cohort: user acquisition method") + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+
+
+```
+```{r grade_retention}
+
+# Calculate proportion of users retain by weeks since first signup
+# by sign-up date
+retention_df_frst_six_weeks_by_grade = first_six_weeks_b2_grade %>%
+  group_by(weeks_retained, grade) %>%
+  summarize(num_users = mean(retained_user))
+
+# Plot retention curves
+ggplot(retention_df_frst_six_weeks_by_grade %>%
+         dplyr::filter(weeks_retained > 0)) +
+  geom_line(aes(x = weeks_retained, y = num_users, color = grade)) +
+  scale_x_continuous(breaks=seq(1, 6)) +
+  xlab("Weeks since first activity") + 
+  ylab("Proportion of Retained Users")  +
+  labs(color = "Cohort: grade") + 
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+
+
+```
+
 To understand how users' initial usage of the app relates to their retention rates, we next graph the proportion of users retained week over week by quartile of initial app usage. That is, we split all users into four groups based on how many stories they view during their first week. Those with usage at the 25$^{th}$ percentile or lower (i.e. 25% of users view that number of stories or fewer) are in group 1 or the first quartile; those with usage at the 26$^{th}$ to 50$^{th}$ percentile are in group 2 or the second quartile; etc. Note that since our usage variable is discrete, the cut-offs for each quartile are rounded up.
 
 ```{r prop_user_retention_by_quartiles_six6ks}
