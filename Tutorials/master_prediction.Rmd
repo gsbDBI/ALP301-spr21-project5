@@ -1,0 +1,341 @@
+---
+title: "Predictive Analysis"
+author: "Chaudhry, Cordero, Kulkarni, Ng"
+date: "May 2021"
+
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    number_sections: no
+    theme: journal
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+ # results = 'hide'
+)
+```
+
+# Overview
+
+What are a meaningful measures of engagement that S2M can use to predict longer tenure on app? If we can define behavioral patterns predictive of long-term usage, S2M can identify users most likely to be shorter-term users and target them with nudges to prolong or increase their engagement. Through the descriptive and cohort analyses, we discovered that there is no notable difference betweenshort vs.  longer term users with respect to the number of stories viewed on the first day, numberof types of story, and which app feature is used to access stories. As seen in Figure YY, the rate ofdecrease in app usage over time is similar across groups of users with varying levels of first-weekusage.  However, further analysis helped uncover the fact that around weeks 8-10 is an importantinflection point for user churn. In order to develop a successful nudging strategy, it is necessary toidentify the users who are likely to have less than 10 weeks of tenure.
+
+
+# Preliminaries
+
+We will use the output created from the R Markdown file titled `master_clustering.Rmd`.
+
+```{r Read_Data}
+filename = "clustering_features_wk9added"
+full_child_data_set <- read.csv(paste(filename, ".csv", sep = ""), header = T, na.strings ="?")
+```
+
+In this section, we can define the response variable we want to predict, as well as select the variables we want as predictors. In order for S2M to predict on different outputs and select different inputs, the values within the " " need to be changed.
+
+```{r Selection}
+
+y_response = c("max_days_since_signup")
+x_features = c("unique_sources_first3wks", "n_sessions_first3wks", "avg_n_stories_first3wkly_sessions")
+
+child_data_set = subset(full_child_data_set, select = c(x_features, y_response))
+```
+
+# Data Splitting
+
+We selected a 60-20-20 split for the training. validation and test sets, respectively. In order for S2M to try different percentages, the splits probabilities need to be changed, but always need to sum to 1. To produce replicable results we are setting a '2021' seed, however this could be removed for real analysis. 
+
+```{r Splitting}
+#Splitting Data into Train & Test
+set.seed(2021)
+
+# Set response
+child_Y <- child_data_set[y_response]
+
+# Set training features
+child_X <- subset(child_data_set, select = c(x_features))
+
+# Scale features?
+child_S <- apply(child_X, MARGIN = 2, FUN = function(X) (X - min(X))/diff(range(X)))
+child_data_set <- cbind(child_Y, child_S)
+
+# Split Shares:
+# Training   Set - 60% 
+# Validation Set - 20% 
+# Test       Set - 20% 
+splits <- sample(1:3, size = nrow(child_data_set), replace = TRUE, prob = c(0.6, 0.2, 0.2))
+
+# Set creation
+child_Train <- child_data_set[splits == 1, ]
+child_CV    <- child_data_set[splits == 3, ]
+child_Test  <- child_data_set[splits == 2, ]
+
+# Get Training Set
+child_Train_Y = child_Train[y_response]
+child_Train_X = subset(child_Train, select = c(x_features))
+
+# Get Validation Set
+child_CV_Y = child_CV[y_response]
+child_CV_X = subset(child_CV, select = c(x_features))
+
+# Get Test Set
+child_Test_Y = child_Test[y_response]
+child_Test_X = subset(child_Test, select = c(x_features))
+```
+
+
+# Prediction Models
+
+Through the clustering and data analysis, we identified the Average Number of Stories, Number ofSessions, and Unique Sources to be the main predictors driving long-term tenure, those acted as ourfeatures, while the Number of Days in Freadom since Signup as the response. The time window touse in the features was left as a hypertuning parameter.We developed a supervised learning prediction model of the tenure, to evaluate the performance ofdifferent approaches we used as metric the Root Mean Squared Error (RMSE) to see how off arethe predictions from the true values (on average).
+
+## Tree Based Methods
+
+### Best Performing Model: Bagging
+We use the libarary Random Forest to fit a Regression Tree Bootstrap Aggregation method by specifying that all variables (mtry = 3) will be taken into account at each split. We will plot the out of bag (OBB) error to get some information on the prediction error depending on the number of trees created.
+
+```{r Bagging}
+library(randomForest)
+#Fit a Ranfom Forest
+set.seed(2021)
+bag.model = randomForest(child_Train_Y[,]~ ., data = child_Train_X, mtry = 3, importance = TRUE)
+bag.model
+
+plot(c(1:500), bag.model$mse, main = "OOB Error vs Number of Trees", xlab = "Number of Trees", ylab = "OOB Error")
+```
+
+We then run predictions on the test set and plot the True Values vs the Predictions. The closer the line looks to an ascending 45 degree incline, the lower the bias is.
+
+```{r RSMEBagging}
+TrbagPred = predict(bag.model, child_Train_X)
+TrbagMSE  = mean((TrbagPred  - child_Train_Y[, ]) ^ 2)
+TrbagRMSE = sqrt(TrbagMSE)
+paste("The RMSE of the Bagging model is:", TrbagRMSE)
+
+
+bagPred = predict(bag.model, child_Test_X)
+bagMSE  = mean((bagPred  - child_Test_Y[, ]) ^ 2)
+bagRMSE = sqrt(bagMSE)
+paste("The RMSE of the Bagging model is:", bagRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], bagPred)
+```
+
+To counter the high bias seen on the Linear Models, flexible methods such as Tree-Based can work. Individual trees suffer from high variance- in order to decrease the variance while maintaining a low bias a tree averaging method such as the Bagging (or Bootstrapped Aggregation) model Agets to a low bias and variance. In order to decrease variance while maintaining sampling costs equal, the Bagging method uses apowerful statistical device known as Bootstrapping: by taking repeated samples with replacement from within a pre-sampled set of observations, we are able to synthetically obtain B number of samples and train an statistical model on each of them. Afterwards, we can average over the predictions of all B models to obtain a final prediction.
+
+Based on the initial analysis we performed, S2M should use the Bagging method. In case S2M wants to explore further, below we present other methods we used.
+
+
+### Regression Tree
+
+```{r loadTree}
+library(tree)
+full.tree.model = tree(child_Train_Y[, ]~ ., data = child_Train_X)
+summary(full.tree.model)
+```
+
+Plot of the full tree.
+
+```{r plotFullModel}
+plot(full.tree.model, main = "Full Tree Model")
+text(full.tree.model, pretty = 0, cex = 0.6)
+```
+
+Evaluating  the  CV  error  of  the pruned trees and plotting their deviance (roughly interpreted as the sum of squared error):
+
+```{r prune}
+set.seed(2021)
+tree.cv =cv.tree(full.tree.model,FUN = prune.tree)
+summary(tree.cv)
+
+plot(tree.cv$size, tree.cv$dev, type = "b", main = "Deviance vs Tree Size", xlab = "Tree Size", ylab = "Deviance")
+```
+
+Computing the RMSE of the full tree
+
+```{r treeRMSE}
+TrtreePred = predict(full.tree.model, child_Train_X)
+TrfullTreeMSE  = mean((TrtreePred  - child_Train_Y[, ]) ^ 2)
+TrfullTreeRMSE = sqrt(TrfullTreeMSE)
+paste("The RMSE of the full tree is  :", TrfullTreeRMSE)
+
+treePred = predict(full.tree.model,child_Test_X)
+fullTreeMSE    = mean((treePred  - child_Test_Y[, ]) ^ 2)
+fullTreeRMSE   = sqrt(fullTreeMSE)
+paste("The RMSE of the full tree is  :", fullTreeRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], treePred)
+```
+
+
+### Boosting 
+
+```{r boosted}
+set.seed(2021)
+require(gbm)
+gbm.model = gbm(child_Train_Y[, ]~., data = child_Train_X, distribution = "gaussian", n.trees = 10000, shrinkage = 0.01, cv.folds = 5)
+summary(gbm.model)
+#plot(gbm.model, i="lstat")
+```
+
+Number of trees that minimizes the CV error. 
+
+```{r CVBoosted}
+boosttrees = length(gbm.model$cv.error)
+boostmin   = which.min(gbm.model$cv.error)
+
+plot(c(1:boosttrees), gbm.model$cv.error, main = "CV Error vs Number of Trees", xlab = "Number of Trees", ylab = "CV Error")
+
+abline(v = boostmin, lty = 2, col = "blue")
+
+paste("The minimizing number of trees is:", boostmin)
+```
+
+Calculating the RMSE
+
+```{r RMSEBoosted}
+TrboostPred  = predict(gbm.model, child_Train_X)
+TrboostMSE   = mean((TrboostPred  - child_Train_Y[, ]) ^ 2)
+TrboostRMSE  = sqrt(TrboostMSE)
+paste("The train RMSE of the Boosting model is:", TrboostRMSE)
+
+boostPred = predict(gbm.model, child_Test_X)
+boostMSE  = mean((boostPred  - child_Test_Y[, ]) ^ 2)
+boostRMSE = sqrt(boostMSE)
+paste("The RMSE of the Boosting model is:", boostRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], boostPred)
+```
+
+### Random Forest
+
+```{r RandomForest}
+library(randomForest)
+#Fit a Ranfom Forest
+set.seed(2021)
+rf.model = randomForest(child_Train_Y[,]~ ., data = child_Train_X, mtry = 2, importance = TRUE)
+summary(rf.model)
+
+plot(c(1:500), rf.model$mse, main = "OOB Error vs Number of Trees", xlab = "Number of Trees", ylab="OOB Error")
+```
+
+Calculating the RMSE
+
+```{r RSMERandom}
+TrrfPred = predict(rf.model, child_Train_X)
+TrrfMSE  = mean((TrrfPred  - child_Train_Y[, ]) ^ 2)
+TrrfRMSE = sqrt(TrrfMSE)
+paste("The RMSE of the Random Forest model is:", TrrfRMSE)
+
+
+rfPred = predict(rf.model, child_Test_X)
+rfMSE  = mean((rfPred    - child_Test_Y[, ]) ^ 2)
+rfRMSE = sqrt(rfMSE)
+paste("The RMSE of the Random Forest model is:", rfRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], rfPred)
+```
+
+
+## Linear Methods and Extensions
+
+### Linear Regression (Ridge)
+
+```{r Fitting_1}
+lm.model  = lm(max_days_since_signup~., data = child_Train)
+```
+
+Calculating the RMSE
+```{r Predictions_1}
+TrlinearPred = predict(lm.model, child_Train_X)
+TrlinearMSE  = mean((TrlinearPred - child_Train_Y[, ]) ^ 2)
+TrlinearRMSE = sqrt(TrlinearMSE)
+paste("The Training RMSE of the Linear Model is:", TrlinearRMSE)
+
+
+linearPred = predict(lm.model, child_Test_X)
+linearMSE  = mean((linearPred - child_Test_Y[, ]) ^ 2)
+linearRMSE = sqrt(linearMSE)
+paste("The RMSE of the Linear Model is:", linearRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], linearPred, ylab = "Linear Regression Prediction", xlab = "True Value")
+```
+
+### Lasso Shrinkage
+
+```{r Fitting_2}
+#Lasso
+library(glmnet)
+cv.out = cv.glmnet(x = as.matrix(child_Train_X),   y = child_Train_Y[,], alpha = 1, nlambda = 100)
+lasso.model = glmnet(x = as.matrix(child_Train_X), y = child_Train_Y[,], alpha = 1, lambda  = cv.out$lambda.min)
+lasso.model$beta #Coefficients in Zero
+```
+
+Calculating the RMSE
+
+```{r Predictions_2}
+TrlassoPred = predict(lasso.model, as.matrix(child_Train_X))
+TrlassoMSE  = mean((TrlassoPred - child_Train_Y[, ]) ^ 2)
+TrlassoRMSE = sqrt(TrlassoMSE)
+paste("The Train RMSE of the Lasso Model is:", TrlassoRMSE)
+
+lassoPred = predict(lasso.model, as.matrix(child_Test_X))
+lassoMSE  = mean((lassoPred - child_Test_Y[, ]) ^ 2)
+lassoRMSE = sqrt(lassoMSE)
+paste("The RMSE of the Lasso Model is:", lassoRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], lassoPred, ylab ="LASSO Prediction", xlab ="True Value")
+```
+
+
+########################### 
+####SUMMARY OF ALL RMSE####
+###########################
+
+```{r RMSESummary}
+paste("The Train RMSE of the Linear Regression :", TrlinearRMSE)
+paste("The Train RMSE of the Lasso             :", TrlassoRMSE)
+paste("The Train RMSE of the Decision Tree     :", TrfullTreeRMSE)
+paste("The Train RMSE of the Boosting Model    :", TrboostRMSE)
+paste("The Train RMSE of the Bagging Model     :", TrbagRMSE)
+paste("The Train RMSE of the Random Forest     :", TrrfRMSE)
+
+paste("The RMSE of the Linear Regression :", linearRMSE)
+paste("The RMSE of the Lasso             :", lassoRMSE)
+paste("The RMSE of the Decision Tree     :", fullTreeRMSE)
+paste("The RMSE of the Boosting Model    :", boostRMSE)
+paste("The RMSE of the Bagging Model     :", bagRMSE)
+paste("The RMSE of the Random Forest     :", rfRMSE)
+
+par(pty = "s")
+plot(child_Test_Y[, ], linearPred)
+plot(child_Test_Y[, ], lassoPred)
+plot(child_Test_Y[, ], treePred)
+plot(child_Test_Y[, ], boostPred)
+plot(child_Test_Y[, ], bagPred)
+plot(child_Test_Y[, ], rfPred)
+```
+
+
+# Implementation Pipeline
+
+Our proposal and implementation pipeline for S2M from this code file and model is as follows:
+
+* Step 1: Run master_clustering.Rmd 
+* Step 2: Use master_prediction.Rmd to identify those users likely to stay for less than 10 weeks
+* Step 3: Nudge users below 10 weeks
