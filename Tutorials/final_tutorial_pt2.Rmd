@@ -103,6 +103,8 @@ pacman::p_load(plm)
 pacman::p_load(lmtest)
 # for summarizing data
 pacman::p_load(ggiraphExtra)
+# for advance predictive modeling
+pacman::p_load(e1071)
 ```
 
 ```{r load_processed_data}
@@ -709,23 +711,23 @@ fviz_cluster(k3_new, clustering_df_added)
 ``` 
 
 ```{r silhouette_score_updated}
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score_updated <- function(k) {
-  km.res <- kmeans(clustering_df_added, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_df_added))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values_updated <- map_dbl(k.values, sil_score_updated)
-
-plot(k.values, sil_values_updated,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, uncomment to separately calculate
+# sil_score_updated <- function(k) {
+#   km.res <- kmeans(clustering_df_added, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_df_added))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_updated <- map_dbl(k.values, sil_score_updated)
+# 
+# plot(k.values, sil_values_updated,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 ```
 
 
@@ -739,13 +741,14 @@ Since the variables for each subsequent week capture information from previous w
 clustering_df_added_wk6<-clustering_df_added[,30:35]
 fviz_nbclust(clustering_df_added_wk6, kmeans, method = "silhouette")
 
-sil_score_updated_wk6 <- function(k) {
-  km.res <- kmeans(clustering_df_added_wk6, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_df_added_wk6))
-  mean(ss[, 3])
-}
-
-sil_values_updated_wk6 <- map_dbl(k.values, sil_score_updated_wk6)
+# Uncomment separately calculate using function
+# sil_score_updated_wk6 <- function(k) {
+#   km.res <- kmeans(clustering_df_added_wk6, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_df_added_wk6))
+#   mean(ss[, 3])
+# }
+# 
+# sil_values_updated_wk6 <- map_dbl(k.values, sil_score_updated_wk6)
 
 ```
 
@@ -895,23 +898,23 @@ correlations_3wks<-as.matrix(correlations_3wks)
 clustering_subset<-clustering_df_added_temporal %>% 
   select(avg_n_stories_first3wkly_sessions, unique_sources_first3wks, n_sessions_first3wks, max_days_since_signup, prop_active)
 
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score_subset <- function(k) {
-  km.res <- kmeans(clustering_subset, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_subset))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values_subset <- map_dbl(k.values, sil_score_subset)
-
-plot(k.values, sil_values_subset,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, uncomment to evaluate
+# sil_score_subset <- function(k) {
+#   km.res <- kmeans(clustering_subset, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_subset))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_subset <- map_dbl(k.values, sil_score_subset)
+# 
+# plot(k.values, sil_values_subset,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 
 fviz_nbclust(clustering_subset, kmeans, method = "silhouette")
 
@@ -928,23 +931,23 @@ clustering_subset_2<-clustering_features_df_added %>%
 
 clustering_subset_2<-clustering_subset_2[,-1]
 
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score_subset_2 <- function(k) {
-  km.res <- kmeans(clustering_subset_2, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_subset_2))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values_subset_2 <- map_dbl(k.values, sil_score_subset_2)
-
-plot(k.values, sil_values_subset_2,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, uncomment to evaluate
+# sil_score_subset_2 <- function(k) {
+#   km.res <- kmeans(clustering_subset_2, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_subset_2))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_subset_2 <- map_dbl(k.values, sil_score_subset_2)
+# 
+# plot(k.values, sil_values_subset_2,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 
 fviz_nbclust(clustering_subset_2, kmeans, method = "silhouette")
 
@@ -963,29 +966,30 @@ clustering_subset_ns<-clustering_df_added_temporal_ns %>%
 
 
 
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score_subset_ns <- function(k) {
-  km.res <- kmeans(clustering_subset_ns, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_subset_ns))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values_subset_ns <- map_dbl(k.values, sil_score_subset_ns)
-
-plot(k.values, sil_values_subset_ns,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, uncomment to evaluate
+# sil_score_subset_ns <- function(k) {
+#   km.res <- kmeans(clustering_subset_ns, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_subset_ns))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_subset_ns <- map_dbl(k.values, sil_score_subset_ns)
+# 
+# plot(k.values, sil_values_subset_ns,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 
 fviz_nbclust(clustering_subset_ns, kmeans, method = "silhouette")
 
 
 ```
-```{r coomparing stability across clusterings}
+
+```{r comparing stability across clusterings}
 
 set.seed(2021)
 # All variables standardized
@@ -998,19 +1002,6 @@ k3_subset_2<-kmeans(clustering_subset_2, centers = 3, nstart = 25)
 set.seed(2021)
 # All variables not standardized
 k3_subset_ns<-kmeans(clustering_subset_ns, centers = 3, nstart = 25)
-
-clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
-  ungroup() %>% 
-  mutate(k3_subset_cluster=k3_subset$cluster)
-
-clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
-  ungroup() %>% 
-  mutate(k3_subset_2_cluster=k3_subset_2$cluster)
-
-
-clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
-  ungroup() %>%
-  mutate(k3_subset_ns_cluster=k3_subset_ns$cluster)
          
 
 fviz_cluster(k3_subset, clustering_subset)
@@ -1035,23 +1026,23 @@ clustering_subset_3<-clustering_features_df_added %>%
 
 clustering_subset_3<-clustering_subset_3[,-1]
 
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score_subset_3 <- function(k) {
-  km.res <- kmeans(clustering_subset_3, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_subset_3))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values_subset_3 <- map_dbl(k.values, sil_score_subset_3)
-
-plot(k.values, sil_values_subset_3,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, uncomment to evaluate
+# sil_score_subset_3 <- function(k) {
+#   km.res <- kmeans(clustering_subset_3, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_subset_3))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_subset_3 <- map_dbl(k.values, sil_score_subset_3)
+# 
+# plot(k.values, sil_values_subset_3,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 
 fviz_nbclust(clustering_subset_3, kmeans, method = "silhouette")
 
@@ -1131,6 +1122,21 @@ tenure_df<-user_num_and_max_sessions %>%
   dplyr::summarize(number=n(), sum_prop_active=sum(prop_active),
                    avg_prop_active=mean(prop_active), st_dev_avg=sd(prop_active))
 
+# Standardizing all variables
+clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
+  ungroup() %>% 
+  mutate(k3_subset_cluster=k3_subset$cluster)
+
+# Only temporal variables not standardized
+clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
+  ungroup() %>% 
+  mutate(k3_subset_2_cluster=k3_subset_2$cluster)
+
+# No standardization
+
+clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
+  ungroup() %>%
+  mutate(k3_subset_ns_cluster=k3_subset_ns$cluster)
 
 
 
@@ -1316,7 +1322,7 @@ k3_subset_clusters_covariate_names <- k3_subset_clusters_covariate_names[k3_subs
 plot_covariate_means_by_ntile(avg_covars_k3_subset_clustering_df, 
                               .ntile = "k3_subset_cluster", 
                               k3_subset_clusters_covariate_names,
-                              n_top = 40, # <- this can be changed to any number
+                              n_top = 20, # <- this can be changed to any number
                               title_label = "k-means clusters (k=3) k3_subsets"
                               )
 
@@ -1332,7 +1338,7 @@ k3_subset_2_clusters_covariate_names <- k3_subset_2_clusters_covariate_names[k3_
 plot_covariate_means_by_ntile(avg_covars_k3_subset_2_clustering_df, 
                               .ntile = "k3_subset_2_cluster", 
                               k3_subset_2_clusters_covariate_names,
-                              n_top = 40, # <- this can be changed to any number
+                              n_top = 20, # <- this can be changed to any number
                               title_label = "k-means clusters (k=3) k3_subsets_2"
                               )
 
@@ -1348,7 +1354,7 @@ k3_subset_ns_clusters_covariate_names <- k3_subset_ns_clusters_covariate_names[k
 plot_covariate_means_by_ntile(avg_covars_k3_subset_ns_clustering_df, 
                               .ntile = "k3_subset_ns_cluster", 
                               k3_subset_ns_clusters_covariate_names,
-                              n_top = 40, # <- this can be changed to any number
+                              n_top = 20, # <- this can be changed to any number
                               title_label = "k-means clusters (k=3) k3_subsets_ns"
                               )
 
@@ -1364,7 +1370,7 @@ tenure_covariate_names <- tenure_covariate_names[tenure_covariate_names != "tenu
 plot_covariate_means_by_ntile(avg_covars_tenure_df, 
                               .ntile = "tenure_type", 
                               tenure_covariate_names,
-                              n_top =30, # <- this can be changed to any number
+                              n_top =20, # <- this can be changed to any number
                               title_label = "subgroups by tenure type"
                               )
 
