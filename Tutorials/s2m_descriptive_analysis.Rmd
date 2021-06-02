@@ -521,6 +521,49 @@ Each bar in this graph shows the number of users who are either short- or long-t
 
 The cutoff that defines short- versus long-term is somewhat arbitrary. For example, we choose to define long-term users as those with activity at least 90 days after sign-up. Would our results later in this tutorial differ if we changed that definition to 89 days after sign-up instead? Probably not, but changing the definition to 120 days after sign-up might well alter our results. You should ensure that your results are robust to different definitions of variables when there are multiple valid definitions you could use. This "robustness check" helps to make sure that your data-driven conclusions are strong and not the result of your particular choice of definition.
 
+
+```{r get_user_tenure_updated}
+
+# Get the number of days each users has been on the app
+user_max_usage_sessions <- filtered_logged_df_may_nov %>%
+  select(days_since_signup, child_id) %>%
+  group_by(child_id) %>%
+  summarize(max_days_since_signup = max(days_since_signup))
+
+# Get ids of short-term daily users
+short_term_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup < 90) %>%
+  pull(child_id)
+
+# Get ids of medium-term daily users
+medium_term_users <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup >= 90 & max_days_since_signup<180) %>%
+  pull(child_id)
+
+
+# Get ids of experienced/tenured daily users
+tenured_users_updated <- user_max_usage_sessions %>%
+  dplyr::filter(max_days_since_signup >= 180) %>%
+  pull(child_id)
+
+# Create a dataframe with number of users and user type for plotting
+user_type_df_updated <- data.frame(num_users = c(length(short_term_users),
+                                length(medium_term_users),
+                                length(tenured_users_updated)),
+                  user_type = c("Short-term","Medium-term","Long-term"))
+
+ggplot(user_type_df_updated, aes(x = user_type, y = num_users)) +
+  geom_bar(stat = "identity", fill = 'darkblue') +
+  xlab("User Tenure Type") + 
+  ylab("Number of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+
+```
+
+
 **Exercise**
 *Choose a different definition of a long-term user and replicate the figure above. Don't forget to redefine your sample to ensure you can identify whether users are short- or long-term with the available data.*
 
