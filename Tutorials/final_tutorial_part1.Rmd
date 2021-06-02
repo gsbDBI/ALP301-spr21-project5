@@ -339,7 +339,7 @@ ggplot(retention_df_frst_six_weeks_by_signup_date %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
-ggsave("signups.jpg")
+
 ```
 
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective cohort, in which a cohort is defined by the user's sign-up month. Note that each line is always declining because the number of users retained each week is a subset of the users retained in the prior week. Intuitively, this makes sense because for any given week, we can have at most all the users who were retained from the previous week (i.e. no users drop out in that week). This figure shows that 80 to 90% of users are retained after the first week, but that this figure steadily declines over time. There is a notable sharper decline for May, October, and November compared to other months from week 1 to week 2.
@@ -369,7 +369,7 @@ ggplot(retention_df_frst_ten_weeks_by_signup_date %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
-ggsave('extended_plot.jpg')
+
 ```
 
 ```{r}
@@ -394,7 +394,7 @@ ggplot(retention_df_frst_max_weeks_by_signup_date %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
-ggsave('extended_plot_max.jpg')
+
 ```
 
 
@@ -487,7 +487,7 @@ ggplot(retention_df_frst_six_weeks_by_num_stories_frst_week %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
-ggsave("quartiles.jpg")
+
 ```
 
 Each line in the graph shows the retention rate over the first six weeks of app usage for its respective quartile. Again, note that each line is always declining. This figure shows that, while there are similar rates of decline for each quartile, app usage in the first week predicts the rate of drop-out in the first week. That is, users who view more stories in the first week have higher retention rates in week 2, but thereafter lose users at the same rate as other quartiles.
@@ -522,7 +522,7 @@ ggplot(retention_df_frst_max_weeks_by_num_stories_frst_week_max %>%
   theme_bw() +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
-ggsave("quartile_max.jpg")
+
 ```
 
 
@@ -530,7 +530,7 @@ ggsave("quartile_max.jpg")
 # Exercise 2
 *Shift the analysis out a week. Does app usage in the second week predict retention rates in week 3? Create the same graph, but base the quartiles on the number of stories the user views in their second week, and look at retention rates for weeks 3 through 8. Do you view similar patterns?*
 
-```{r prop_user_retention_by_quartiles_six6ks}
+```{r prop_user_retention_by_quartiles_six6ks2}
 # Get the number of stories read in the first week of being active on app
 num_stories_first_week = first_six_weeks %>%
   dplyr::filter(weeks_retained == 1)
@@ -633,7 +633,7 @@ Each line in the graph shows the average number of active days per week over the
 # Exercise 4 
 *The previous two graphs assess the quantity of app usage for short- versus long-term users. What other measures would be useful to quantify app usage? Replicate one of the graphs above with a different measure to quantify app usage. (Hint: one example could be the maximum usage streak, or number of active days in a row, in a week.)*
 
-```{r avg_active_days_weekly_6wks}
+```{r avg_active_days_weekly_6wks2}
 # Average number of active days week over week in first 6 weeks since signup
 users_compo_frst_six_week_active_days <- filtered_logged_df_may_nov %>%
   dplyr::filter(sessions_since_signup <= 5) %>% # note: first week of signup is 0 
