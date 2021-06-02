@@ -371,7 +371,7 @@ set.seed(1234)
 
 # Perform k-means clustering with k=4
 k4 <- kmeans(clustering_df, centers = 4, nstart = 25)
-str(k4)
+# str(k4)
 
 # Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
 fviz_cluster(k4, clustering_df)
@@ -383,7 +383,7 @@ We then ran k-means with k=5 and k=3, in addition to k=4, to compare the results
 ```{r k5_means_users}
 # Perform k-means clustering with k=5
 k5 <- kmeans(clustering_df, centers = 5, nstart = 25)
-str(k5)
+# str(k5)
 
 # Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions) 
 # Can be un-commented to observe preliminary clustering
@@ -393,7 +393,7 @@ str(k5)
 ```{r k3_means_users}
 # Perform k-means clustering with k=3
 k3 <- kmeans(clustering_df, centers = 3, nstart = 25)
-str(k3)
+# str(k3)
 
 # Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
 # Can be un-commented to observe preliminary clustering
@@ -416,23 +416,23 @@ The silhouette score ranges between [-1, 1]. A high value is desirable because i
 We then ploted the silhouette score to better understand how the observations are grouped into k clusters. 
 
 ```{r silhouette_score}
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score <- function(k) {
-  km.res <- kmeans(clustering_df, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_df))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values <- map_dbl(k.values, sil_score)
-
-plot(k.values, sil_values,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, can be uncommented
+# sil_score <- function(k) {
+#   km.res <- kmeans(clustering_df, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_df))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values <- map_dbl(k.values, sil_score)
+# 
+# plot(k.values, sil_values,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 ```
 
 Thus, as can be seen from the silhouette plot above, the k with the highest silhouette score is 2 and the k with the second highest silhouette score is 3. We can also see that, in general, the silhouette score decreases as the number of clusters increases.
@@ -697,30 +697,30 @@ The plot below visualizes the updated clustering through PCA.
 ```{r k3_means_users_new}
 # Perform k-means clustering with k=3
 k3_new <- kmeans(clustering_df_added, centers = 3, nstart = 25)
-str(k3_new)
+#str(k3_new)
 
 # Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
 fviz_cluster(k3_new, clustering_df_added)
 ``` 
 
 ```{r silhouette_score_updated, include=FALSE, echo=FALSE}
-# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
-sil_score_updated <- function(k) {
-  km.res <- kmeans(clustering_df_added, centers = k, nstart = 25)
-  ss <- silhouette(km.res$cluster, dist(clustering_df_added))
-  mean(ss[, 3])
-}
-
-# Compute and plot wss for k = 2 to k = 10
-k.values <- 2:10
-
-# extract silhouette scores for 2-10 clusters
-sil_values_updated <- map_dbl(k.values, sil_score_updated)
-
-plot(k.values, sil_values_updated,
-       type = "b", pch = 19, frame = FALSE, 
-       xlab = "Number of clusters k",
-       ylab = "Silhouette Score")
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, can be uncommented
+# sil_score_updated <- function(k) {
+#   km.res <- kmeans(clustering_df_added, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_df_added))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_updated <- map_dbl(k.values, sil_score_updated)
+# 
+# plot(k.values, sil_values_updated,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
 ```
 
 
@@ -775,7 +775,7 @@ correlations_3wks
 
 ```
 
-Through this elaborate process, we selected the following 5 variables for our final clustering model and for further user analysis based on the obtained segmentation from the clustering: 
+Through this elaborate process (implementation of each of the various iterations in file `final_tutorial_pt2.Rmd`), we selected the following 5 variables for our final clustering model and for further user analysis based on the obtained segmentation from the clustering: 
 
 * Average number of stories read per week for the first 3 weeks (`avg_n_stories_first3wkly_sessions`)
 * Total number of reading sessions in the first 3 weeks (`n_sessions_first3wks`)
@@ -961,7 +961,7 @@ k3_subset_clusters_covariate_names <- k3_subset_clusters_covariate_names[k3_subs
 plot_covariate_means_by_ntile(avg_covars_k3_subset_clustering_df, 
                               .ntile = "k3_subset_cluster", 
                               k3_subset_clusters_covariate_names,
-                              n_top = 40, # <- this can be changed to any number
+                              n_top = 20, # <- this can be changed to any number
                               title_label = "k-means clusters (k=3)"
                               )
 
