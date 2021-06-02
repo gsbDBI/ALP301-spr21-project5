@@ -1,0 +1,1389 @@
+---
+title: "Clustering Analysis"
+author: "Chaudhry, Cordero, Kulkarni, Ng"
+date: "May 2021"
+
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    number_sections: no
+    theme: journal
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+ # results = 'hide'
+)
+```
+
+# Overview
+
+User segmentation into **Superusers**, **Middle-users**, and **Stragglers** has been a central feature of the analysis we have performed on the Stones 2 Milestones (S2M) Freadom app data. Once classified into these categories, a user could potentially be provided with nudges to induce behavior similar to Superusers if the user is in one of the other two categories. Through our preliminary analyses, we found that individual variables (*weak learners*) were not very useful in capturing user-behavior and engagement with the app, so we used clustering analysis as a comprehensive approach incorporating multi-dimensional data on users' consumption as well as temporal loyalty to the app to segment users into the three categories. We provide details about the analysis process in the sections below (this document is adapted from the third tutorial titled `final_tutorial_pt2.Rmd`. 
+
+
+# Preliminaries
+
+First, we repeat some of the preliminaries from the previous tutorials. We load the necessary packages, then load the processed datasets. The processed datasets include the filtered user-level data and filtered user-story interactions data. Please refer to the *Preliminaries* section in the second tutorial titled `final_tutorial_part1.Rmd` where we save these processed datasets (using the `write.csv` function) in order to understand details about the filters applied to the data-frames before saving them as csv files.
+
+```{r load_tidyverse}
+# Ensure that pacman is installed for package management and loading.
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse) # for data reading wrangling and visualization
+
+```
+
+```{r load_packages}
+# for enabling dataframe manipulation (0.8.0.1)
+pacman::p_load(dplyr) 
+# for simple interface for OLS estimation w/ robust std errors ()
+pacman::p_load(estimatr)
+# for summary statistics (3042.89)
+pacman::p_load(fBasics)
+# for data visualization
+pacman::p_load(ggplot2)
+# for easily highlighting lines and points in a ggplot 
+pacman::p_load(gghighlight) 
+# for working with "grid" graphics
+pacman::p_load(gridExtra)
+# for providing a prettier RMarkdown (1.0.1)
+pacman::p_load(kableExtra)
+# for providing a general-purpose tool for dynamic report generation  (1.21)
+pacman::p_load(knitr)
+# for dealing with date-type data 
+pacman::p_load(lubridate)
+# for computing the mode of a vector
+pacman::p_load(modeest)
+# for reading csv files (1.3.1)
+pacman::p_load(readr)
+# for modeling, transforming, and visualizing data  (0.8.0.1)
+pacman::p_load(tidyverse)
+# for modern alternative to data frames (2.1.1)
+pacman::p_load(tibble)
+# for simplifying the process of creating tidy data
+pacman::p_load(tidyr)
+# for internal scaling of graph labels and text 
+pacman::p_load(scales)
+# for cross-validating glm models
+pacman::p_load(boot)
+# for streamlining the model training process 
+pacman::p_load(caret)
+# for enabling fast implementation of random forests 
+pacman::p_load(randomForest)
+# for clustering algorithms
+pacman::p_load(cluster)
+# for clustering algorithms & visualization
+pacman::p_load(factoextra)
+# for storing data as tables, data frames, or list objects
+pacman::p_load(data.table)
+# for cross-validating regressions
+pacman::p_load(cvms)
+# for progress bars
+pacman::p_load(plyr)
+# for building regression models 
+pacman::p_load(glmnet)
+# for variance estimations
+pacman::p_load(plm)
+# for testing linear models
+pacman::p_load(lmtest)
+# for summarizing data
+pacman::p_load(ggiraphExtra)
+```
+
+```{r load_processed_data}
+# Load the filtered user-level data stored as a CSV file 
+filtered_child_df <- read.csv(file='filtered_child_df.csv')
+
+# Load the filtered dataframe from the cohort analysis tutorial
+filtered_logged_df <- read.csv(file='filtered_logged_df.csv')
+```
+
+
+# Performing preliminary user segmentation created using k-means clustering 
+We used a machine learning clustering technique known as K-means clustering to divide users into groups based on their behavioral characteristics. This technique helped us to identify patterns in app usage behavior across different user groups.
+
+Clustering is a set of techniques used for finding subgroups of observations within a data set. It falls into the unsupervised machine learning category because it seeks to find relationships between observations without using a dependent variable `y` to train on. K-means clustering is the simplest and most commonly used clustering technique that splits a data-set into k clusters based on a specified set of observation characteristics.
+
+## Feature engineering for clustering analysis
+In order to perform clustering analysis, we transformed the raw data into features that better represent the underlying problem to our model. 
+
+We started by building features based on users' initial behavioral characteristics. These user characteristics are similar to the ones analyzed in the course tutorials.
+
+### Features related to the users' behavioral characteristics
+We createed the following features for the users' first week on the app: 
+
+* Total number of stories in the first weekly session
+* Average number of stories per daily session in the first week 
+* Number of unique daily sessions in the first week 
+* Number of unique stories viewed in the first week 
+* Number of unique app features used in the first week 
+
+We created the same set of features for the first two and first three weeks on the app as well.
+
+
+```{r first_wk_feature_engineering_clustering}
+# total number of stories in first weekly session
+tot_num_stories_firstwkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, sessions_since_signup, story_id)%>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_firstwkly_session = n()) 
+
+# average number of stories per daily session in first week 
+avg_num_stories_daily_session_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_firstwk = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_firstwk = mean(n_stories_firstwk)) 
+
+clustering_features_df <- left_join(x = tot_num_stories_firstwkly_session, y = avg_num_stories_daily_session_firstwk %>%
+                        select(child_id, avg_n_stories_firstwk), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first week 
+num_daily_sessions_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_firstwk = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_firstwk %>%
+                        select(child_id, n_sessions_firstwk), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first week 
+num_unique_stories_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_firstwk = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_firstwk %>%
+                        select(child_id, unique_stories_firstwk), 
+                      by = 'child_id')
+
+# number of unique app features used in first week 
+num_unique_sources_firstwk = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 7) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_firstwk = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_firstwk %>%
+                        select(child_id, unique_sources_firstwk), 
+                      by = 'child_id')
+
+```
+
+```{r first_2wks_feature_engineering_clustering}
+# total number of stories in first two weekly sessions
+tot_num_stories_first2wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first2wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first2wkly_session %>%
+                        select(child_id, n_stories_first2wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first two weekly sessions
+tot_num_stories_first2wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first2wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first2wkly_sessions = mean(n_stories_first2wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first2wkly_session %>%
+                        select(child_id, avg_n_stories_first2wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first two weeks
+avg_num_stories_daily_session_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first2wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first2wks = mean(n_stories_first2wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first2wks %>%
+                        select(child_id, avg_n_stories_first2wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first two weeks
+num_daily_sessions_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first2wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first2wks %>%
+                        select(child_id, n_sessions_first2wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first two weeks
+num_unique_stories_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first2wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first2wks %>%
+                        select(child_id, unique_stories_first2wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first two weeks
+num_unique_sources_first2wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 14) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first2wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first2wks %>%
+                        select(child_id, unique_sources_first2wks), 
+                      by = 'child_id')
+```
+
+```{r first_3wks_feature_engineering_clustering}
+# total number of stories in first three weekly sessions
+tot_num_stories_first3wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first3wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first3wkly_session %>%
+                        select(child_id, n_stories_first3wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first three weekly sessions
+tot_num_stories_first3wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first3wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first3wkly_sessions = mean(n_stories_first3wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first3wkly_session %>%
+                        select(child_id, avg_n_stories_first3wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first three weeks
+avg_num_stories_daily_session_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first3wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first3wks = mean(n_stories_first3wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first3wks %>%
+                        select(child_id, avg_n_stories_first3wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first three weeks
+num_daily_sessions_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first3wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first3wks %>%
+                        select(child_id, n_sessions_first3wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first three weeks
+num_unique_stories_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first3wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first3wks %>%
+                        select(child_id, unique_stories_first3wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 3 weeks
+num_unique_sources_first3wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 21) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first3wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first3wks %>%
+                        select(child_id, unique_sources_first3wks), 
+                      by = 'child_id')
+
+clustering_features_df <- clustering_features_df %>% select(-c(sessions_since_signup))
+```
+
+## Preprocessing the data for clustering analysis
+Before we continued with the clustering analysis, we had to ensure that the data is pre-processed properly by: 
+
+* Checking that each row of our data-frame is an observation (or individual) and each column is a feature.
+* Ensuring that none of the rows corresponding to features used for clustering have missing values. 
+* Standardizing the features to ensure that the comparisons between different features are valid. Note that when we "standardize" the data, we ensure each feature has a mean of 0 and a standard deviation of 1.
+
+```{r preprocess_clustering_data}
+# Print a random row to ensure it is an observation and that each corresp. column of that row is a feature
+print(clustering_features_df[15, ])
+
+# Ensure we removed all missing values from the data
+print(sum(is.na(clustering_features_df)))
+
+# Standardize the features used for clustering -- ensure child_id is not preprocessed
+clustering_df <- clustering_features_df %>% ungroup()
+vars<-clustering_df %>% select(-c(child_id))
+vars<-c(colnames(vars))
+pre_proc_val <- preProcess(clustering_df[,vars], method = c("center", "scale"))
+clustering_df[,vars] = predict(pre_proc_val, clustering_df[,vars])
+rownames(clustering_df) <- clustering_df$child_id
+clustering_df$child_id <- NULL 
+```
+
+## Performing k-means clustering
+To split users into subgroups, we use k-means clustering, which is the most commonly used clustering technique for partitioning a data-set into a set of k clusters where k (the number of clusters) is pre-determined by the data scientist.
+
+The way k-means clusters observations into groups is by maximizing the similarity between observations within the same cluster (i.e. high intra-cluster similarity) while minimizing the similarity between observations from different clusters (i.e. low inter-cluster similarity). 
+
+In addition, the reason we call this technique "k-means" clustering is because it represents each cluster by a center (i.e. centroid) that is computed as the mean of the points assigned to that cluster. To assign an observation $x_i$ to a cluster, the algorithm computes the Euclidean distance between the observation's features and the cluster mean in order to determine which cluster's centroid is closest to $x_i$ and assign $x_i$ to the closest cluster accordingly.
+
+We began by partitioning the users into four clusters (`centers`= 4) based on the users' initial behavioral characteristics on the app. We also set `nstart` equal to 25 so that the k-means function randomly generates 25 initial configurations and chooses the best one. In our case, k-means will repeat the process of randomly picking 4 centroids (i.e. observations) to initialize the 4 clusters 25 times. By setting `nstart=25`, we try to optimize the process of initializing clusters, so that the k-means model becomes stable. For example, if the algorithm randomly picks observations that are outliers as the initial centroids then the clustering will not be stable. When the clustering is not stable, the algorithm might end up assigning observations to different clusters each time the clusters are reinitialized.
+
+```{r k4_means_users}
+set.seed(1234)
+
+# Perform k-means clustering with k=4
+k4 <- kmeans(clustering_df, centers = 4, nstart = 25)
+str(k4)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+fviz_cluster(k4, clustering_df)
+``` 
+
+The plot above enables us to visualize the assignment of clusters for all data points after performing principal component analysis (PCA). PCA allows us to reduce the dimensionality of the data since we have more than two features (i.e. dimensions) in our data. The axes in the plot correspond to the first two principal components that explain the majority of the variance in our data. 
+
+We then ran k-means with k=5 and k=3, in addition to k=4, to compare the results of this clustering algorithm with varying k values.
+```{r k5_means_users}
+# Perform k-means clustering with k=5
+k5 <- kmeans(clustering_df, centers = 5, nstart = 25)
+str(k5)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions) 
+# Can be un-commented to observe preliminary clustering
+#fviz_cluster(k5, clustering_df)
+``` 
+
+```{r k3_means_users}
+# Perform k-means clustering with k=3
+k3 <- kmeans(clustering_df, centers = 3, nstart = 25)
+str(k3)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+# Can be un-commented to observe preliminary clustering
+# fviz_cluster(k3, clustering_df)
+``` 
+
+
+
+## Determining optimal cluster size for k-means clustering
+Given that the k-means clustering algorithm allows us to specify the number of clusters generated, we implemented the average silhouette method (described below)
+
+
+### Silhouette method
+The silhouette method measures the quality of a clustering by determining how well each observation lies within its assigned cluster. First, it computes the silhouette coefficient of each data point, which measures how much a point is similar to its own cluster (cohesion) compared to other clusters (separation). Then, it averages out the silhouette coefficient for all data points to obtain the silhouette score. 
+
+More specifically, the silhouette coefficient is calculated using the mean intra-cluster distance ($d_{intra}$) and the mean nearest-cluster distance ($d_{nearest\_cluster}$) for each sample. The silhouette coefficient for a sample is $(d_{nearest\_cluster}-d_{intra}) / max(d_{intra}, d_{nearest\_cluster})$ where $d_{nearest\_cluster}$ is the distance between a data point and the nearest cluster that the point is not a part of. 
+
+The silhouette score ranges between [-1, 1]. A high value is desirable because it implies that the data point is very similar to the other points in its cluster and not similar to the points in other clusters. On the other hand, a low silhouette score implies that the clustering configuration has to be changed (i.e. data points have to be reassigned to new clusters) as there could be too few or too many clusters in the current configuration.
+
+We then ploted the silhouette score to better understand how the observations are grouped into k clusters. 
+
+```{r silhouette_score}
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
+sil_score <- function(k) {
+  km.res <- kmeans(clustering_df, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(clustering_df))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 10
+k.values <- 2:10
+
+# extract silhouette scores for 2-10 clusters
+sil_values <- map_dbl(k.values, sil_score)
+
+plot(k.values, sil_values,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters k",
+       ylab = "Silhouette Score")
+```
+
+Thus, as can be seen from the silhouette plot above, the k with the highest silhouette score is 2 and the k with the second highest silhouette score is 3. We can also see that, in general, the silhouette score decreases as the number of clusters increases.
+
+```{r silhouette_score_opt_clusters}
+fviz_nbclust(clustering_df, kmeans, method = "silhouette")
+```
+
+# Developing the clustering approach further
+
+Using the preliminary clustering analysis set-up, we wanted to explore additional features to incorporate for the clustering analysis while evaluating performance using the average silhouette score. We tried a few approaches: 
+
+## Adding Features for Weeks 4, 5, and 6
+
+We engineered variables for weeks 4, 5, and 6, similar to the ones engineered for weeks 1, 2, and 3, and performed user segmentation through clustering with those added features (after the required pre-processing and standardization). 
+
+```{r first_4wks_feature_engineering_clustering}
+# total number of stories in first 4 weekly sessions
+tot_num_stories_first4wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first4wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first4wkly_session %>%
+                        select(child_id, n_stories_first4wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first 4 weekly sessions
+tot_num_stories_first4wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first4wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first4wkly_sessions = mean(n_stories_first4wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first4wkly_session %>%
+                        select(child_id, avg_n_stories_first4wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first 4 weeks
+avg_num_stories_daily_session_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first4wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first4wks = mean(n_stories_first4wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first4wks %>%
+                        select(child_id, avg_n_stories_first4wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first 4 weeks
+num_daily_sessions_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first4wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first4wks %>%
+                        select(child_id, n_sessions_first4wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first 4 weeks
+num_unique_stories_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first4wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first4wks %>%
+                        select(child_id, unique_stories_first4wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 4 weeks
+num_unique_sources_first4wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 28) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first4wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first4wks %>%
+                        select(child_id, unique_sources_first4wks), 
+                      by = 'child_id')
+
+
+```
+
+```{r first_5wks_feature_engineering_clustering}
+# total number of stories in first 5 weekly sessions
+tot_num_stories_first5wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first5wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first5wkly_session %>%
+                        select(child_id, n_stories_first5wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first 5 weekly sessions
+tot_num_stories_first5wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first5wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first5wkly_sessions = mean(n_stories_first5wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first5wkly_session %>%
+                        select(child_id, avg_n_stories_first5wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first 5 weeks
+avg_num_stories_daily_session_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first5wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first5wks = mean(n_stories_first5wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first5wks %>%
+                        select(child_id, avg_n_stories_first5wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first 5 weeks
+num_daily_sessions_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first5wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first5wks %>%
+                        select(child_id, n_sessions_first5wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first 5 weeks
+num_unique_stories_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first5wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first5wks %>%
+                        select(child_id, unique_stories_first5wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 5 weeks
+num_unique_sources_first5wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 35) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first5wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first5wks %>%
+                        select(child_id, unique_sources_first5wks), 
+                      by = 'child_id')
+
+
+```
+
+```{r first_6wks_feature_engineering_clustering}
+# total number of stories in first 6 weekly sessions
+tot_num_stories_first6wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_stories_first6wkly_sessions = n()) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first6wkly_session %>%
+                        select(child_id, n_stories_first6wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories in first 6 weekly sessions
+tot_num_stories_first6wkly_session = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, sessions_since_signup, story_id) %>%
+  group_by(child_id, sessions_since_signup) %>%
+  dplyr::summarize(n_stories_first6wkly_sessions = n()) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first6wkly_sessions = mean(n_stories_first6wkly_sessions))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = tot_num_stories_first6wkly_session %>%
+                        select(child_id, avg_n_stories_first6wkly_sessions), 
+                      by = 'child_id')
+
+# average number of stories per daily session in first 6 weeks
+avg_num_stories_daily_session_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, days_since_signup, story_id)%>%
+  group_by(child_id, days_since_signup) %>%
+  dplyr::summarize(n_stories_first6wks = n())  %>%
+  group_by(child_id) %>%
+  dplyr::summarize(avg_n_stories_first6wks = mean(n_stories_first6wks)) 
+
+clustering_features_df <- left_join(x = clustering_features_df, y = avg_num_stories_daily_session_first6wks %>%
+                        select(child_id, avg_n_stories_first6wks), 
+                      by = 'child_id')
+
+# number of unique daily sessions in first 6 weeks
+num_daily_sessions_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, days_since_signup)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(n_sessions_first6wks = n_distinct(days_since_signup))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_daily_sessions_first6wks %>%
+                        select(child_id, n_sessions_first6wks), 
+                      by = 'child_id')
+
+# number of unique stories viewed in first 6 weeks
+num_unique_stories_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, story_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_stories_first6wks = n_distinct(story_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_stories_first6wks %>%
+                        select(child_id, unique_stories_first6wks), 
+                      by = 'child_id')
+
+# number of unique app features used in first 6 weeks
+num_unique_sources_first6wks = filtered_logged_df  %>%
+  dplyr::filter(days_since_signup < 42) %>% 
+  select(child_id, source_page_id)%>%
+  group_by(child_id) %>%
+  dplyr::summarize(unique_sources_first6wks = n_distinct(source_page_id))
+
+clustering_features_df <- left_join(x = clustering_features_df, y = num_unique_sources_first6wks %>%
+                        select(child_id, unique_sources_first6wks), 
+                      by = 'child_id')
+
+```
+
+```{r separating_datasets_with_new_variables}
+
+clustering_features_df_added<-clustering_features_df
+clustering_features_df<-clustering_features_df[,-c(18:36)]
+```
+
+```{r preprocess_clustering_data_new}
+# Print a random row to ensure it is an observation and that each corresp. column of that row is a feature
+print(clustering_features_df_added[15, ])
+
+# Ensure we removed all missing values from the data
+print(sum(is.na(clustering_features_df_added)))
+
+# Standardize the features used for clustering -- ensure child_id is not preprocessed
+clustering_df_added <- clustering_features_df_added %>% ungroup()
+vars<-clustering_df_added %>% select(-c(child_id))
+vars<-c(colnames(vars))
+pre_proc_val <- preProcess(clustering_df_added[,vars], method = c("center", "scale"))
+clustering_df_added[,vars] = predict(pre_proc_val, clustering_df_added[,vars])
+rownames(clustering_df_added) <- clustering_df_added$child_id
+clustering_df_added$child_id <- NULL 
+```
+
+The plot below visualizes the updated clustering through PCA. 
+```{r k3_means_users_new}
+# Perform k-means clustering with k=3
+k3_new <- kmeans(clustering_df_added, centers = 3, nstart = 25)
+str(k3_new)
+
+# Visualize clustering results using fviz_cluster (which performs PCA to plot data points in higher dimensions)
+fviz_cluster(k3_new, clustering_df_added)
+``` 
+
+```{r silhouette_score_updated, include=FALSE, echo=FALSE}
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated
+sil_score_updated <- function(k) {
+  km.res <- kmeans(clustering_df_added, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(clustering_df_added))
+  mean(ss[, 3])
+}
+
+# Compute and plot wss for k = 2 to k = 10
+k.values <- 2:10
+
+# extract silhouette scores for 2-10 clusters
+sil_values_updated <- map_dbl(k.values, sil_score_updated)
+
+plot(k.values, sil_values_updated,
+       type = "b", pch = 19, frame = FALSE, 
+       xlab = "Number of clusters k",
+       ylab = "Silhouette Score")
+```
+
+
+```{r silhouette_score_opt_clusters_updated}
+fviz_nbclust(clustering_df_added, kmeans, method = "silhouette")
+```
+
+We see that we obtained a slightly higher silhouette score with the optimal value for k relative to the clustering performed using features only up to week 3. 
+
+
+## Temporal Loyalty Variables and Feature selection
+
+We wanted to not only use behavioral characteristiscs from the users and their engagement with the app in their first few weeks, we also wanted to incorporate some aspects of their temporal loyalty with the app as features to use in the clustering. Thus, we created two additional features, `max_days_since_signup` and `prop_active`. The `max_days_since_signup` incorporated the last day they showed activity on the app when the data snapshot from the Freadom app was taken, and the `prop_active` variable calculated the proportion of days on the app that they were active till their last day of activity in the data, so that we could capture information about the frequence of engagement.
+
+```{r adding_temporal_variables}
+
+user_num_and_max_sessions<-filtered_logged_df %>%
+  select(days_since_signup, child_id) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(max_days_since_signup = max(days_since_signup), 
+                   num_days_active=n(),
+                   prop_active=num_days_active/(max_days_since_signup))
+
+
+
+clustering_features_df_added<-left_join(clustering_features_df_added, user_num_and_max_sessions,by="child_id")
+
+
+
+```
+
+Through discussions with the teaching team of ALP 301, we developed a criteria for the final selection of features to use for clustering and user segmentation. The criteria was threefold: 
+
+* Business implementation is feasible 
+* Cluster stability is optimized 
+* Low correlation between features
+
+For clustering to be used as model that we want S2M to implement, we wanted to be aware of the business implications with regards to creating features. Since we wanted to be able to perform clustering relatively soon into a user's tenure on the app to be able to classify their usage into one of the three categories (Superusers, Middle-users, and Stragglers), so that they could be provided with nudges on the app accordingly. Therefore we excluded variables from beyond week 3 from our selection. 
+
+Additionally, with regards to clustering with the engineered temporal variables as features, we considered clustering with or without standardization of the temporal variables. Without standardization of the temporal variables, we received much higher average silhouette scores. However, we observed that between the two approaches, the clustering output seemed to be very unstable, and therefore departure from the convention of standardizing the features seemed unreasonable. 
+
+Additionally, in selecting behavioral characteristic variables, we first shortlisted only week 3 variables and excluded week 1 and 2 variables, since the week 3 variables captured information from weeks 1 and 2. Moreover, from preliminary cohort analysis in the tutorials, we had observed that week 1 variables standalone were weak learners, and did not provide adequate information about long-term user engagement with the app. In addition, week 3, which is little less than a month, seemed to be an adequate period of time for users to familarize themselves with the app and make initial decisions about their app usage. Secondly, out of the six week 3 variables, we wanted to select a subset of variables such that the correlation between those is as low as possible. This ensured that each of the variables we used for clustering captured different kinds of information. The correlation matrix of week 3 variables is presented in the code below.
+
+```{r correlation_bw_wk3_vars}
+# Calculating correlations between week 3 variables
+
+clustering_features_df_3wks<-clustering_features_df_added[,13:18]
+correlations_3wks<-cor(clustering_features_df_3wks,method="pearson")
+correlations_3wks<-as.matrix(correlations_3wks)
+
+correlations_3wks
+
+```
+
+Through this elaborate process, we selected the following 5 variables for our final clustering model and for further user analysis based on the obtained segmentation from the clustering: 
+
+* Average number of stories read per week for the first 3 weeks (`avg_n_stories_first3wkly_sessions`)
+* Total number of reading sessions in the first 3 weeks (`n_sessions_first3wks`)
+* Number of unique sources of stories (`unique_sources_first3wks`)
+* Total number of days on the app (`max_days_since_signup`)
+* Proportion of active days on the app (`prop_active`)
+
+# Final Clustering Model 
+
+With the 5 variables selected, we created and ran our final clustering model (with k=3 since that corresponded with our envisioned user segmentation), which is visualized through the plot below:
+
+```{r standardizing_new_variables_created}
+# Print a random row to ensure it is an observation and that each corresp. column of that row is a feature
+print(clustering_features_df_added[15, ])
+
+# Ensure we removed all missing values from the data
+print(sum(is.na(clustering_features_df_added)))
+
+# Standardize the features used for clustering -- ensure child_id is not preprocessed
+clustering_df_added_temporal <- clustering_features_df_added %>% ungroup()
+vars<-clustering_df_added_temporal %>% select(-c(child_id))
+vars<-c(colnames(vars))
+pre_proc_val <- preProcess(clustering_df_added_temporal[,vars], method = c("center", "scale"))
+clustering_df_added_temporal[,vars] = predict(pre_proc_val, clustering_df_added_temporal[,vars])
+rownames(clustering_df_added_temporal) <- clustering_df_added_temporal$child_id
+
+clustering_df_added_temporal$child_id <- NULL 
+
+```
+
+```{r clustering_with_5_vars}
+
+clustering_subset<-clustering_df_added_temporal %>% 
+  select(avg_n_stories_first3wkly_sessions, unique_sources_first3wks, n_sessions_first3wks, max_days_since_signup, prop_active)
+
+set.seed(2021)
+k3_subset<-kmeans(clustering_subset, centers = 3, nstart = 25)
+fviz_cluster(k3_subset, clustering_subset)
+
+# function to compute silhouette score for k clusters -- takes to long to run so will not be automatically evaluated, can be uncommented to run
+# sil_score_subset <- function(k) {
+#   km.res <- kmeans(clustering_subset, centers = k, nstart = 25)
+#   ss <- silhouette(km.res$cluster, dist(clustering_subset))
+#   mean(ss[, 3])
+# }
+# 
+# # Compute and plot wss for k = 2 to k = 10
+# k.values <- 2:10
+# 
+# # extract silhouette scores for 2-10 clusters
+# sil_values_subset <- map_dbl(k.values, sil_score_subset)
+# 
+# plot(k.values, sil_values_subset,
+#        type = "b", pch = 19, frame = FALSE, 
+#        xlab = "Number of clusters k",
+#        ylab = "Silhouette Score")
+
+fviz_nbclust(clustering_subset, kmeans, method = "silhouette")
+
+```
+
+# User Segmentation from Clustering Analysis 
+
+Once the clustering was performed, we looked at the average covariate values for each of the clusters, and identified which cluster was Superusers, Middle-users, and Stragglers.
+
+```{r def_plot_covariate_means_by_ntile}
+
+# Table of covariates means/sd by n.tile. The n.tile is the variable that 
+# defines the subgroups here, which needs to be done before running the function.
+plot_covariate_means_by_ntile <- function(.df, .ntile = "ntile", covariate_names, n_top = 10, title_label) {
+  .df <- as.data.frame(.df)
+  covariate_names <- covariate_names
+  .df[, .ntile] <- as.factor(.df[, .ntile])
+
+  # Regress each covariate on ntile/subgroup assignment to means p
+  cov_means <- lapply(covariate_names, function(covariate) {
+    lm_robust(as.formula(paste0(covariate, " ~ 0 + ", .ntile)), data = .df, se_type = "stata")
+  })
+
+  # Extract the mean and standard deviation of each covariate per ntile/subgroup
+  cov_table <- lapply(cov_means, function(cov_mean) {
+    means <- as.data.frame(t(coef(summary(cov_mean))[,c("Estimate", "Std. Error")]))
+    means
+  })
+  
+  # Preparation to color the chart
+  temp_standardized <- sapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    .standardized
+  })
+  
+  colnames(temp_standardized) <- covariate_names
+  ordering <- order(apply(temp_standardized, MARGIN = 2, function(x) {.range <- range(x); abs(.range[2] - .range[1])}), decreasing = TRUE)
+  
+  color_scale <- max(abs(c(max(temp_standardized, na.rm = TRUE), min(temp_standardized, na.rm = TRUE))))
+  color_scale <- color_scale * c(-1,1)
+  max_std_dev <- floor(max(color_scale))
+  breaks <- -max_std_dev:max_std_dev
+  labels <- c(" ", breaks, " ")
+  breaks <- c(min(color_scale), breaks, max(color_scale))
+  
+  # Little trick to display the standard errors
+  table <- lapply(seq_along(covariate_names), function(j) {
+    covariate_name <- covariate_names[j]
+    .mean <- mean(.df[, covariate_name], na.rm = TRUE)
+    .sd <- sd(.df[, covariate_name], na.rm = TRUE)
+    m <- as.matrix(round(signif(cov_table[[j]], digits=4), 3))
+    .standardized <- (m["Estimate",] - .mean) / .sd
+    return(data.frame(covariate = covariate_name, 
+                      group = 1:ncol(m), 
+                      estimate = m["Estimate",], std.error = m["Std. Error",], 
+                      standardized = .standardized))
+  })
+  # table <- do.call(rbind, table)
+  table <- rbindlist(table)
+  
+  setnames(table, "group", .ntile)
+  table[, covariate := factor(covariate, levels = rev(covariate_names[ordering]), ordered = TRUE)]
+  
+  table[covariate %in% head(covariate_names[ordering], n_top)] %>%
+    mutate(info = paste0(estimate, "\n(", std.error, ")")) %>%
+    ggplot(aes_string(x = .ntile, y = "covariate")) +
+    # Add coloring
+    geom_raster(aes(fill = standardized)
+                , alpha = 0.9
+    ) +
+    scale_fill_distiller(palette = "RdBu",
+                         direction = 1,
+                         breaks = breaks,
+                         labels = labels,
+                         limits = color_scale,
+                         name = "Standard\nDeviation on\nNormalized\nDistribution"
+    ) +
+    # add numerics
+    geom_text(aes(label = info), size=2.1) +
+    # reformat
+    labs(title = paste0("Covariate averages within ", title_label),
+         y = "within covariate") +
+    scale_x_continuous(position = "top") #+
+  #cowplot::theme_minimal_hgrid(16)
+}
+
+```
+
+```{r}
+
+# Get the highest number of days each users has been on the app
+user_max_usage_sessions <- filtered_logged_df %>%
+  select(days_since_signup, child_id) %>%
+  group_by(child_id) %>%
+  dplyr::summarize(max_days_since_signup = max(days_since_signup))
+# Join the users' maximum days on the app and tenure type with the clustering features dataframe
+clustering_joined_df <- left_join(x = clustering_features_df, y = user_max_usage_sessions %>%
+                         select(child_id, max_days_since_signup), 
+                      by = 'child_id')
+
+# Add the tenure type to each row corresp. to a user id
+clustering_joined_df$tenure_type <- ifelse(clustering_joined_df$max_days_since_signup<90, "Short-Term",
+                                         ifelse(clustering_joined_df$max_days_since_signup>=90 &
+                                                  clustering_joined_df$max_days_since_signup<180, "Medium-Term",
+                                                "Long-Term"))
+
+clustering_features_df_added_with_tenure<-left_join(x=clustering_features_df_added, y=clustering_joined_df %>% 
+                                                      select(child_id, tenure_type),
+                                                    by='child_id')
+
+
+clustering_features_df_added_with_tenure<-clustering_features_df_added_with_tenure %>% 
+  ungroup() %>% 
+  mutate(k3_subset_cluster=k3_subset$cluster)
+
+# For k-means clusters with the subset of variables selected
+avg_covars_k3_subset_clustering_df <- clustering_features_df_added_with_tenure %>%
+  select(-c(child_id, tenure_type))
+avg_covars_k3_subset_clustering_df$max_days_since_signup <- as.integer(avg_covars_k3_subset_clustering_df$max_days_since_signup)
+k3_subset_clusters_covariate_names <- colnames(avg_covars_k3_subset_clustering_df) 
+k3_subset_clusters_covariate_names <- k3_subset_clusters_covariate_names[k3_subset_clusters_covariate_names != "k3_subset_cluster"]
+
+plot_covariate_means_by_ntile(avg_covars_k3_subset_clustering_df, 
+                              .ntile = "k3_subset_cluster", 
+                              k3_subset_clusters_covariate_names,
+                              n_top = 40, # <- this can be changed to any number
+                              title_label = "k-means clusters (k=3)"
+                              )
+
+```
+
+The heatmap above outputs the covariate averages for each cluster. The colors indicate departure from the sample mean: blue indicates an average covariate value above the mean and red indicates an average value below the sample mean.
+In addition, the covariates on the y-axis are displayed by order of variation across groups.
+
+Once we had identified the clusters by the user segmentation group, we then performed further analysis on the fixed characteristics of those individuals as presented below: 
+
+```{r user_acquisition_method_cluster_analysis_updated}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users_updated <- clustering_features_df_added_with_tenure %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, k3_subset_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df_w_clusters_updated, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated) 
+
+# For k=3
+# Get number of users by acquistion method in each k-means cluster
+filtered_child_df_w_k3_clusters_updated <- filtered_child_df_w_clusters_updated %>%
+  select(k3_subset_cluster, user) %>%
+  group_by(k3_subset_cluster, user) %>%
+  dplyr::summarize(user_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by acquisition method in each cluster
+filtered_child_df_w_k3_clusters_total_updated <- filtered_child_df_w_k3_clusters_updated %>%
+  group_by(user) %>%
+  dplyr::summarize(user_k3_cluster_total = sum(user_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = filtered_child_df_w_k3_clusters_total_updated %>%
+                        select(user, user_k3_cluster_total), 
+                      by = 'user')
+
+filtered_child_df_w_k3_clusters_updated$user_k3_cluster_prop = filtered_child_df_w_k3_clusters_updated$user_k3_cluster/filtered_child_df_w_k3_clusters_updated$user_k3_cluster_total
+
+# Get cluster labels of users for k-means model with k=3
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$k3_subset_cluster)
+
+
+
+# Plot the user acquistion method for each cluster of k-means clustering 
+# For k=3 
+ggplot(filtered_child_df_w_k3_clusters_updated,
+  aes(user, user_k3_cluster_prop, fill = k3_cluster_label)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("User Acquisition Method") + 
+  ylab("Proportion of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  scale_fill_discrete(name="Usage categories", labels = c("Superusers", "Stragglers", "Middle-users"))+
+  ggtitle("K-means Clusters (k=3)")
+
+
+```
+
+```{r user_acquisition_method_cluster_analysis_updated_2}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users_updated <- clustering_features_df_added_with_tenure %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, k3_subset_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df_w_clusters_updated, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated) 
+
+# For k=3
+# Get number of users by acquistion method in each k-means cluster
+filtered_child_df_w_k3_clusters_updated <- filtered_child_df_w_clusters_updated %>%
+  select(k3_subset_cluster, user) %>%
+  group_by(k3_subset_cluster, user) %>%
+  dplyr::summarize(user_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by acquisition method in each cluster
+filtered_child_df_w_k3_clusters_total_updated <- filtered_child_df_w_k3_clusters_updated %>%
+  group_by(user) %>%
+  dplyr::summarize(user_k3_cluster_total = sum(user_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = filtered_child_df_w_k3_clusters_total_updated %>%
+                        select(user, user_k3_cluster_total), 
+                      by = 'user')
+
+# Proportion by cluster
+clusters_total<-filtered_child_df_w_k3_clusters_updated %>% 
+  dplyr::group_by(k3_subset_cluster) %>% 
+  dplyr::summarize(cluster_total=sum(user_k3_cluster))
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = clusters_total, 
+                      by = 'k3_subset_cluster')
+
+filtered_child_df_w_k3_clusters_updated$k3_cluster_prop = filtered_child_df_w_k3_clusters_updated$user_k3_cluster/filtered_child_df_w_k3_clusters_updated$cluster_total
+
+# Get cluster labels of users for k-means model with k=3
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$k3_subset_cluster)
+
+
+filtered_child_df_w_k3_clusters_updated<-filtered_child_df_w_k3_clusters_updated %>% 
+  mutate(Usage_Group=case_when(k3_subset_cluster==1 ~ "Superusers",
+                               k3_subset_cluster==2 ~ "Stragglers", 
+                               k3_subset_cluster==3 ~ "Middle-users"))
+
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$Usage_Group)
+
+# Plot the user acquistion method for each cluster of k-means clustering 
+# For k=3 
+ggplot(filtered_child_df_w_k3_clusters_updated,
+  aes(Usage_Group, k3_cluster_prop, fill = user)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("Cluster") + 
+  ylab("Proportion of Cluster") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  ggtitle("K-means Clusters (k=3)")+
+  scale_x_discrete(limits = c("Superusers", "Middle-users", "Stragglers"))
+
+
+```
+
+```{r grade_cluster_analysis_updated}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users_updated <- clustering_features_df_added_with_tenure %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, k3_subset_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df_w_clusters_updated, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated) 
+
+# For k=3
+# Get number of users by grade in each k-means cluster
+filtered_child_df_w_k3_clusters_updated <- filtered_child_df_w_clusters_updated %>%
+  select(k3_subset_cluster, grade) %>%
+  group_by(k3_subset_cluster, grade) %>%
+  dplyr::summarize(grade_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by grade in each cluster
+filtered_child_df_w_k3_clusters_total_updated <- filtered_child_df_w_k3_clusters_updated %>%
+  group_by(grade) %>%
+  dplyr::summarize(grade_k3_cluster_total = sum(grade_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = filtered_child_df_w_k3_clusters_total_updated %>%
+                        select(grade, grade_k3_cluster_total), 
+                      by = 'grade')
+
+filtered_child_df_w_k3_clusters_updated$grade_k3_cluster_prop = filtered_child_df_w_k3_clusters_updated$grade_k3_cluster/filtered_child_df_w_k3_clusters_updated$grade_k3_cluster_total
+
+# Get cluster labels of users for k-means model with k=3
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$k3_subset_cluster)
+
+plot_order<-c(4, 5, 6, 7, 8, 9, 2, 1, 3, 4, 5, 6, 7, 8, 9, 2, 1, 3, 4, 5, 6, 7, 8, 9, 2, 1, 3)
+
+filtered_child_df_w_k3_clusters_updated<-cbind(filtered_child_df_w_k3_clusters_updated,plot_order)
+
+# Plot the grade for each cluster of k-means clustering 
+# For k=3 
+ggplot(filtered_child_df_w_k3_clusters_updated,
+  aes(reorder(grade, plot_order), grade_k3_cluster_prop, fill = k3_cluster_label)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("Grade") + 
+  ylab("Proportion of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  scale_fill_discrete(name="Usage categories", labels = c("Superusers", "Stragglers", "Middle-users"))+
+  ggtitle("K-means Clusters (k=3)")
+
+
+```
+
+```{r grade_cluster_analysis_updated_2}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users_updated <- clustering_features_df_added_with_tenure %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, k3_subset_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df_w_clusters_updated, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated) 
+
+# For k=3
+# Get number of users by grade in each k-means cluster
+filtered_child_df_w_k3_clusters_updated <- filtered_child_df_w_clusters_updated %>%
+  select(k3_subset_cluster, grade) %>%
+  group_by(k3_subset_cluster, grade) %>%
+  dplyr::summarize(grade_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by grade in each cluster
+filtered_child_df_w_k3_clusters_total_updated <- filtered_child_df_w_k3_clusters_updated %>%
+  group_by(grade) %>%
+  dplyr::summarize(grade_k3_cluster_total = sum(grade_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = filtered_child_df_w_k3_clusters_total_updated %>%
+                        select(grade, grade_k3_cluster_total), 
+                      by = 'grade')
+
+# Proportion by cluster
+clusters_total<-filtered_child_df_w_k3_clusters_updated %>% 
+  dplyr::group_by(k3_subset_cluster) %>% 
+  dplyr::summarize(cluster_total=sum(grade_k3_cluster))
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = clusters_total, 
+                      by = 'k3_subset_cluster')
+
+filtered_child_df_w_k3_clusters_updated$grade_k3_cluster_prop = filtered_child_df_w_k3_clusters_updated$grade_k3_cluster/filtered_child_df_w_k3_clusters_updated$cluster_total
+
+filtered_child_df_w_k3_clusters_updated<-filtered_child_df_w_k3_clusters_updated %>% 
+  mutate(Usage_Group=case_when(k3_subset_cluster==1 ~ "Superusers",
+                               k3_subset_cluster==2 ~ "Stragglers", 
+                               k3_subset_cluster==3 ~ "Middle-users"))
+
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$Usage_Group)
+
+plot_order<-c(4, 5, 6, 7, 8, 9, 2, 1, 3, 4, 5, 6, 7, 8, 9, 2, 1, 3, 4, 5, 6, 7, 8, 9, 2, 1, 3)
+
+filtered_child_df_w_k3_clusters_updated<-cbind(filtered_child_df_w_k3_clusters_updated,plot_order)
+
+# Plot the grade for each cluster of k-means clustering 
+# For k=3 
+ggplot(filtered_child_df_w_k3_clusters_updated,
+  aes(Usage_Group, grade_k3_cluster_prop, fill = reorder(grade,plot_order) )) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("Cluster") + 
+  ylab("Proportion of Cluster") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  scale_fill_discrete(name="grade")+
+  ggtitle("K-means Clusters (k=3)")+
+  scale_x_discrete(limits = c("Superusers", "Middle-users", "Stragglers"))
+
+
+```
+
+
+
+```{r reading_level_cluster_analysis_updated}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users_updated <- clustering_features_df_added_with_tenure %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, k3_subset_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df_w_clusters_updated, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated) 
+
+# For k=3
+# Get number of users by reading level in each k-means cluster
+filtered_child_df_w_k3_clusters_updated <- filtered_child_df_w_clusters_updated %>%
+  select(k3_subset_cluster, grade_level) %>%
+  group_by(k3_subset_cluster, grade_level) %>%
+  dplyr::summarize(grade_level_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by reading level in each cluster
+filtered_child_df_w_k3_clusters_total_updated <- filtered_child_df_w_k3_clusters_updated %>%
+  group_by(grade_level) %>%
+  dplyr::summarize(grade_level_k3_cluster_total = sum(grade_level_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = filtered_child_df_w_k3_clusters_total_updated %>%
+                        select(grade_level, grade_level_k3_cluster_total), 
+                      by = 'grade_level')
+
+filtered_child_df_w_k3_clusters_updated$grade_level_k3_cluster_prop = filtered_child_df_w_k3_clusters_updated$grade_level_k3_cluster/filtered_child_df_w_k3_clusters_updated$grade_level_k3_cluster_total
+
+# Get cluster labels of users for k-means model with k=3
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$k3_subset_cluster)
+
+
+
+
+# Plot the reading_level for each cluster of k-means clustering 
+# For k=3 
+ggplot(filtered_child_df_w_k3_clusters_updated,
+  aes(grade_level, grade_level_k3_cluster_prop, fill = k3_cluster_label)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("Reading Level on the App") + 
+  ylab("Proportion of Users") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  scale_fill_discrete(name="Usage categories", labels = c("Superusers", "Stragglers", "Middle-users"))+
+  ggtitle("K-means Clusters (k=3)")
+
+
+```
+
+```{r grade_level_cluster_analysis_updated_2}
+
+# Join the users' k-means cluster labels with the user-story interactions dataframe 
+clustered_users_updated <- clustering_features_df_added_with_tenure %>% 
+  pull(child_id)
+
+# Get cluster labels for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, k3_subset_cluster), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated)
+  
+# Get tenure type for users across all clusters
+filtered_child_df_w_clusters_updated <- left_join(x = filtered_child_df_w_clusters_updated, y = clustering_features_df_added_with_tenure %>%
+                                            select(child_id, tenure_type), 
+                                          by = 'child_id') %>% 
+  dplyr::filter(child_id %in% clustered_users_updated) 
+
+# For k=3
+# Get number of users by reading level in each k-means cluster
+filtered_child_df_w_k3_clusters_updated <- filtered_child_df_w_clusters_updated %>%
+  select(k3_subset_cluster, grade_level) %>%
+  group_by(k3_subset_cluster, grade_level) %>%
+  dplyr::summarize(grade_level_k3_cluster = n()) %>%
+  ungroup %>%
+  drop_na()
+
+# Get proportion of users by reading level in each cluster
+filtered_child_df_w_k3_clusters_total_updated <- filtered_child_df_w_k3_clusters_updated %>%
+  group_by(grade_level) %>%
+  dplyr::summarize(grade_level_k3_cluster_total = sum(grade_level_k3_cluster)) 
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = filtered_child_df_w_k3_clusters_total_updated %>%
+                        select(grade_level, grade_level_k3_cluster_total), 
+                      by = 'grade_level')
+
+# Proportion by cluster
+clusters_total<-filtered_child_df_w_k3_clusters_updated %>% 
+  dplyr::group_by(k3_subset_cluster) %>% 
+  dplyr::summarize(cluster_total=sum(grade_level_k3_cluster))
+
+filtered_child_df_w_k3_clusters_updated <- left_join(x = filtered_child_df_w_k3_clusters_updated, y = clusters_total, 
+                      by = 'k3_subset_cluster')
+
+filtered_child_df_w_k3_clusters_updated$grade_level_k3_cluster_prop = filtered_child_df_w_k3_clusters_updated$grade_level_k3_cluster/filtered_child_df_w_k3_clusters_updated$cluster_total
+
+filtered_child_df_w_k3_clusters_updated<-filtered_child_df_w_k3_clusters_updated %>% 
+  mutate(Usage_Group=case_when(k3_subset_cluster==1 ~ "Superusers",
+                               k3_subset_cluster==2 ~ "Stragglers", 
+                               k3_subset_cluster==3 ~ "Middle-users"))
+
+filtered_child_df_w_k3_clusters_updated$k3_cluster_label <- factor(filtered_child_df_w_k3_clusters_updated$Usage_Group)
+
+
+# Plot the reading level for each cluster of k-means clustering 
+# For k=3 
+ggplot(filtered_child_df_w_k3_clusters_updated,
+  aes(Usage_Group, grade_level_k3_cluster_prop, fill = grade_level)) +
+  geom_col(stat = 'identity', position="dodge") +
+  xlab("Cluster") + 
+  ylab("Proportion of Cluster") + 
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = 90, hjust=0.5), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  #scale_fill_discrete(name="Usage categories", labels = c("Superusers", "Stragglers", "Middle-users"))+
+  ggtitle("K-means Clusters (k=3)")+
+  scale_x_discrete(limits = c("Superusers", "Middle-users", "Stragglers"))
+
+
+```
+
+Discussion of the insights obtained from the plots are provided in the Final Presentation and the Final Memo. 
+
+# Implementation Pipeline
+
+Our proposal and implementation pipeline for S2M from this code file and model is as follows:
+
+* Step 1: New users sign-up on the app. Behavioral characteristic features and temporal variable features are calculated (and updated for pre-existing users).
+* Step 2: The clustering model is re-run once every 3 weeks (since the features calculated are week 3 variables). If computational complexity is a concern, the model may be re-run according to a difference frequence. 
+* Step 3: Updated user segmentation is obtained for users into the three categories (Superusers, Middle-users, Stragglers). The users are then nudged according to their new usage category.
